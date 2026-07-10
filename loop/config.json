@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "phases": [
+    "discover",
+    "decide",
+    "design",
+    "build",
+    "verify",
+    "learn",
+    "release"
+  ],
+  "gates": {
+    "discover": ["problem_statement", "market_evidence", "pricing_evidence"],
+    "decide": ["selected_direction", "success_metric", "kill_criteria"],
+    "design": ["architecture", "vertical_slice", "verification_plan"],
+    "build": ["build_result"],
+    "verify": ["test_result", "runtime_proof"],
+    "learn": ["learning", "next_hypothesis"],
+    "release": ["release_decision"]
+  },
+  "scoring": {
+    "pain": {"weight": 1.4, "direction": "higher"},
+    "frequency": {"weight": 1.2, "direction": "higher"},
+    "demand": {"weight": 1.4, "direction": "higher"},
+    "aiLeverage": {"weight": 1.0, "direction": "higher"},
+    "nativeLeverage": {"weight": 1.0, "direction": "higher"},
+    "buildSpeed": {"weight": 1.2, "direction": "higher"},
+    "opsEfficiency": {"weight": 1.0, "direction": "higher"},
+    "monetization": {"weight": 0.8, "direction": "higher"},
+    "defensibility": {"weight": 0.6, "direction": "higher"},
+    "risk": {"weight": 1.2, "direction": "lower"}
+  },
+  "git": {
+    "branchPattern": "product/{product}/cycle-{cycle}",
+    "commitPattern": "loop({product}): {message}"
+  }
+}

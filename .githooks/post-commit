@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+stamp=$(date '+%Y%m%d-%H%M%S')
+short_head=$(git rev-parse --short HEAD)
+tag="checkpoint/${stamp}-${short_head}"
+
+git tag "$tag" HEAD
+printf 'Created rollback checkpoint %s\n' "$tag"

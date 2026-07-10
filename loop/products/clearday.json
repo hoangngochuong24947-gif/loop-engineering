@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "clearday",
+  "name": "ClearDay",
+  "ideaId": "ai-day-planner",
+  "targetPath": "targets/AI_Friendly_iOS_Lab/ClearDay",
+  "ownedPaths": [
+    "targets/AI_Friendly_iOS_Lab/ClearDay",
+    "targets/AI_Friendly_iOS_Lab/README.md",
+    "targets/AI_Friendly_iOS_Lab/opportunity-scan.md",
+    "targets/AI_Friendly_iOS_Lab/setup-status.md",
+    "loop/products/clearday.json",
+    "loop/tracker/clearday.jsonl"
+  ],
+  "project": {
+    "type": "xcode",
+    "projectPath": "targets/AI_Friendly_iOS_Lab/ClearDay/ClearDay.xcodeproj",
+    "scheme": "ClearDay",
+    "bundleId": "com.example.ClearDay",
+    "simulatorName": "iPhone 17"
+  },
+  "loop": {
+    "phase": "design",
+    "cycle": 1,
+    "hypothesis": "People will adopt a planner that turns vague tasks into an approved daily schedule without requiring an account or subscription.",
+    "successMetrics": [
+      "A new user creates and schedules a task in under 60 seconds",
+      "Every schedule mutation is previewed before Calendar or Reminders is changed",
+      "Core planning remains usable with AI unavailable"
+    ],
+    "killCriteria": [
+      "The deterministic planner cannot produce a useful schedule without excessive setup",
+      "Calendar and Reminders permissions create unacceptable onboarding abandonment",
+      "The first slice requires a hosted backend to be useful"
+    ]
+  },
+  "commands": {
+    "inspect": [
+      ["xcodebuild", "-list", "-project", "{projectPath}"]
+    ],
+    "build": [
+      ["xcodebuild", "-project", "{projectPath}", "-scheme", "{scheme}", "-configuration", "Debug", "-destination", "platform=iOS Simulator,name={simulatorName}", "build"]
+    ],
+    "test": [
+      ["xcodebuild", "-project", "{projectPath}", "-scheme", "{scheme}", "-configuration", "Debug", "-destination", "platform=iOS Simulator,name={simulatorName}", "test"]
+    ]
+  }
+}

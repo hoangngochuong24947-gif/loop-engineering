@@ -1,0 +1,270 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-10T22:40:00+08:00",
+  "opportunities": [
+    {
+      "id": "ai-day-planner",
+      "name": "AI day planner and task decomposer",
+      "category": "productivity",
+      "incumbents": ["Motion", "Sunsama", "Clarify"],
+      "pricingSignal": "$17-$29/month for common premium plans",
+      "wedge": "Local Calendar and Reminders planning with deterministic scheduling and optional on-device AI",
+      "firstIntents": ["Add task", "Plan my day", "Break down task", "Start focus"],
+      "metrics": {"pain": 5, "frequency": 5, "demand": 5, "aiLeverage": 5, "nativeLeverage": 5, "buildSpeed": 4, "opsEfficiency": 5, "monetization": 4, "defensibility": 4, "risk": 1},
+      "sources": ["https://www.usemotion.com/pricing", "https://www.sunsama.com/pricing"]
+    },
+    {
+      "id": "knowledge-inbox",
+      "name": "Read-it-later and knowledge inbox",
+      "category": "productivity",
+      "incumbents": ["Readwise Reader", "Matter"],
+      "pricingSignal": "Readwise Reader is about $9.99/month billed annually and has no permanent free tier",
+      "wedge": "Local library, source-linked summaries, App Intent capture, and open Markdown/JSON export",
+      "firstIntents": ["Save link", "Summarize unread", "Open next article"],
+      "metrics": {"pain": 4, "frequency": 4, "demand": 4, "aiLeverage": 5, "nativeLeverage": 4, "buildSpeed": 4, "opsEfficiency": 4, "monetization": 4, "defensibility": 4, "risk": 2},
+      "sources": ["https://readwise.io/pricing", "https://docs.readwise.io/faqs/subscription"]
+    },
+    {
+      "id": "voice-memory",
+      "name": "Private voice notes and transcription",
+      "category": "productivity",
+      "incumbents": ["Otter", "Notta"],
+      "pricingSignal": "Otter and Notta commonly charge roughly $8-$17/month for individual premium plans",
+      "wedge": "On-device-first capture, private archive, structured action extraction, and pay-only-for-cloud-minutes fallback",
+      "firstIntents": ["Record thought", "Transcribe latest", "Create tasks from note"],
+      "metrics": {"pain": 4, "frequency": 5, "demand": 5, "aiLeverage": 5, "nativeLeverage": 5, "buildSpeed": 3, "opsEfficiency": 4, "monetization": 4, "defensibility": 4, "risk": 2},
+      "sources": ["https://otter.ai/pricing", "https://www.notta.ai/en/pricing"]
+    },
+    {
+      "id": "personal-crm",
+      "name": "Private personal relationship manager",
+      "category": "productivity",
+      "incumbents": ["Dex", "Clay Personal CRM"],
+      "pricingSignal": "Dex starts around $12/month and deeper plans reach about $20/month",
+      "wedge": "Local Contacts and Calendar timeline with private briefs and voice interaction logging",
+      "firstIntents": ["Log interaction", "Remind me to contact", "Prepare for meeting"],
+      "metrics": {"pain": 4, "frequency": 4, "demand": 4, "aiLeverage": 4, "nativeLeverage": 5, "buildSpeed": 4, "opsEfficiency": 5, "monetization": 4, "defensibility": 4, "risk": 2},
+      "sources": ["https://getdex.com/pricing/"]
+    },
+    {
+      "id": "private-journal",
+      "name": "Private journal and reflection coach",
+      "category": "lifestyle",
+      "incumbents": ["Day One", "Stoic"],
+      "pricingSignal": "Day One publishes $49.99/year and $74.99/year tiers, with AI concentrated in the higher tier",
+      "wedge": "Encrypted local journals, user-owned export, and on-device reflection without training on entries",
+      "firstIntents": ["Create entry", "Log mood", "Reflect on week"],
+      "metrics": {"pain": 4, "frequency": 5, "demand": 4, "aiLeverage": 5, "nativeLeverage": 4, "buildSpeed": 5, "opsEfficiency": 5, "monetization": 3, "defensibility": 3, "risk": 2},
+      "sources": ["https://dayoneapp.com/plans/"]
+    },
+    {
+      "id": "document-receipt-scanner",
+      "name": "Smart document and receipt scanner",
+      "category": "utilities",
+      "incumbents": ["Scanner Pro", "Adobe Scan", "CamScanner"],
+      "pricingSignal": "Common premium scanner plans start around $4.99-$7.99/month",
+      "wedge": "VisionKit capture, local OCR, structured fields, and open CSV/JSON/PDF export",
+      "firstIntents": ["Scan receipt", "Export month", "Find document"],
+      "metrics": {"pain": 4, "frequency": 3, "demand": 5, "aiLeverage": 4, "nativeLeverage": 5, "buildSpeed": 5, "opsEfficiency": 5, "monetization": 3, "defensibility": 3, "risk": 1},
+      "sources": ["https://apps.apple.com/us/app/scanner-pro-scan-documents/id333710667"]
+    },
+    {
+      "id": "study-deck",
+      "name": "Source-linked study deck and exam coach",
+      "category": "education",
+      "incumbents": ["Quizlet", "Knowt"],
+      "pricingSignal": "Quizlet paid plans are roughly $35.99-$44.99/year with usage limits in lower tiers",
+      "wedge": "Local decks, cited card generation, spaced repetition, and Anki/CSV export",
+      "firstIntents": ["Start review", "Create cards from clipboard", "Quiz me"],
+      "metrics": {"pain": 4, "frequency": 5, "demand": 5, "aiLeverage": 5, "nativeLeverage": 3, "buildSpeed": 4, "opsEfficiency": 4, "monetization": 4, "defensibility": 3, "risk": 2},
+      "sources": ["https://quizlet.com/upgrade/"]
+    },
+    {
+      "id": "workout-planner",
+      "name": "Transparent adaptive workout planner",
+      "category": "health-fitness",
+      "incumbents": ["Fitbod", "Freeletics"],
+      "pricingSignal": "Fitbod is publicly listed around $15.99/month or $95.99/year",
+      "wedge": "Free logging, explainable progression rules, equipment-aware plans, and HealthKit integration",
+      "firstIntents": ["Start workout", "Log set", "Replace exercise"],
+      "metrics": {"pain": 4, "frequency": 5, "demand": 5, "aiLeverage": 4, "nativeLeverage": 5, "buildSpeed": 3, "opsEfficiency": 5, "monetization": 4, "defensibility": 4, "risk": 3},
+      "sources": ["https://fitbod.me/"]
+    },
+    {
+      "id": "plant-care",
+      "name": "Confidence-aware plant identification and care",
+      "category": "lifestyle",
+      "incumbents": ["PictureThis"],
+      "pricingSignal": "PictureThis commonly lists a $39.99/year in-app purchase",
+      "wedge": "Free care tracking and reminders with evidence-backed identification and visible uncertainty",
+      "firstIntents": ["Identify plant", "Mark watered", "Show care today"],
+      "metrics": {"pain": 3, "frequency": 3, "demand": 5, "aiLeverage": 5, "nativeLeverage": 4, "buildSpeed": 3, "opsEfficiency": 3, "monetization": 4, "defensibility": 3, "risk": 4},
+      "sources": ["https://apps.apple.com/us/app/picturethis-plant-identifier/id1252497129"]
+    },
+    {
+      "id": "food-log",
+      "name": "Voice-first food logger and meal planner",
+      "category": "health-fitness",
+      "incumbents": ["MyFitnessPal", "Noom"],
+      "pricingSignal": "MyFitnessPal publishes $79.99/year and $99.99/year premium tiers",
+      "wedge": "USDA-backed data, reusable meals, local history, voice capture, and optional paid vision credits",
+      "firstIntents": ["Log meal", "Repeat breakfast", "Show remaining macros"],
+      "metrics": {"pain": 5, "frequency": 5, "demand": 5, "aiLeverage": 5, "nativeLeverage": 4, "buildSpeed": 2, "opsEfficiency": 3, "monetization": 5, "defensibility": 4, "risk": 5},
+      "sources": ["https://www.myfitnesspal.com/premium"]
+    },
+    {
+      "id": "subscription-tracker",
+      "name": "Private subscription and renewal tracker",
+      "category": "finance",
+      "incumbents": ["Rocket Money", "Bobby"],
+      "pricingSignal": "Rocket Money reserves cancellation and advanced tracking for Premium",
+      "wedge": "Local receipt/email parsing, manual confirmation, renewal calendar, and no bank login requirement for the core workflow",
+      "firstIntents": ["Add subscription", "What renews next", "Mark canceled"],
+      "metrics": {"pain": 5, "frequency": 3, "demand": 5, "aiLeverage": 4, "nativeLeverage": 4, "buildSpeed": 4, "opsEfficiency": 5, "monetization": 4, "defensibility": 3, "risk": 3},
+      "sources": ["https://www.rocketmoney.com/learn/personal-finance/how-much-does-rocket-money-cost"]
+    },
+    {
+      "id": "travel-organizer",
+      "name": "Offline trip and reservation organizer",
+      "category": "travel",
+      "incumbents": ["Wanderlog", "TripIt"],
+      "pricingSignal": "Wanderlog Pro starts around $39.99/year",
+      "wedge": "Local itinerary, share-sheet capture, offline maps cache, and source-linked AI suggestions",
+      "firstIntents": ["Add reservation", "Show today trip", "Navigate next stop"],
+      "metrics": {"pain": 4, "frequency": 2, "demand": 5, "aiLeverage": 4, "nativeLeverage": 5, "buildSpeed": 3, "opsEfficiency": 4, "monetization": 4, "defensibility": 4, "risk": 2},
+      "sources": ["https://wanderlog.com/pro"]
+    },
+    {
+      "id": "home-inventory",
+      "name": "Home inventory and warranty memory",
+      "category": "utilities",
+      "incumbents": ["Sortly"],
+      "pricingSignal": "Sortly business-oriented paid plans start around $24/month on annual promotions",
+      "wedge": "Photo-first local catalog, receipt OCR, warranty reminders, and insurance-ready export",
+      "firstIntents": ["Add item", "Find warranty", "Export room inventory"],
+      "metrics": {"pain": 4, "frequency": 2, "demand": 4, "aiLeverage": 4, "nativeLeverage": 4, "buildSpeed": 5, "opsEfficiency": 5, "monetization": 4, "defensibility": 4, "risk": 1},
+      "sources": ["https://www.sortly.com/pricing/"]
+    },
+    {
+      "id": "sleep-energy",
+      "name": "Local sleep debt and energy planner",
+      "category": "health-fitness",
+      "incumbents": ["RISE"],
+      "pricingSignal": "RISE commonly lists annual purchases around $59.99-$69.99 and no permanent free plan",
+      "wedge": "HealthKit-first trend calculation, transparent sleep debt model, and calendar-aware energy planning",
+      "firstIntents": ["Show energy window", "Log nap", "Plan focus window"],
+      "metrics": {"pain": 4, "frequency": 5, "demand": 5, "aiLeverage": 3, "nativeLeverage": 5, "buildSpeed": 3, "opsEfficiency": 5, "monetization": 4, "defensibility": 4, "risk": 4},
+      "sources": ["https://help.risescience.com/hc/en-us/articles/4405177615639-What-subscription-plans-does-RISE-offer"]
+    },
+    {
+      "id": "family-operations",
+      "name": "Private family calendar and household operations",
+      "category": "lifestyle",
+      "incumbents": ["Cozi"],
+      "pricingSignal": "Cozi lists $39/year Gold and $79/year AI Max",
+      "wedge": "Shared household routines, local-first family data, event extraction, meal and chore planning",
+      "firstIntents": ["Add family event", "Assign chore", "What is next"],
+      "metrics": {"pain": 5, "frequency": 5, "demand": 5, "aiLeverage": 4, "nativeLeverage": 5, "buildSpeed": 3, "opsEfficiency": 3, "monetization": 5, "defensibility": 5, "risk": 3},
+      "sources": ["https://www.cozi.com/compare-plans/"]
+    },
+    {
+      "id": "freelance-time",
+      "name": "Freelancer time and invoice assistant",
+      "category": "business",
+      "incumbents": ["Timely", "Toggl Track"],
+      "pricingSignal": "Timely starts around $11/month and higher tiers reach $20-$28/month",
+      "wedge": "Local activity capture, transparent time suggestions, invoice export, and no team SaaS overhead",
+      "firstIntents": ["Start timer", "Stop timer", "Draft invoice"],
+      "metrics": {"pain": 5, "frequency": 5, "demand": 4, "aiLeverage": 4, "nativeLeverage": 4, "buildSpeed": 4, "opsEfficiency": 5, "monetization": 5, "defensibility": 4, "risk": 2},
+      "sources": ["https://www.timely.com/pricing/"]
+    },
+    {
+      "id": "language-speaking",
+      "name": "Affordable language speaking coach",
+      "category": "education",
+      "incumbents": ["ELSA Speak", "Speak"],
+      "pricingSignal": "ELSA lists plans around $89.99/year",
+      "wedge": "Short daily role-play, local vocabulary memory, transparent pronunciation feedback, and metered AI voice sessions",
+      "firstIntents": ["Start role play", "Practice phrase", "Review mistakes"],
+      "metrics": {"pain": 4, "frequency": 5, "demand": 5, "aiLeverage": 5, "nativeLeverage": 4, "buildSpeed": 3, "opsEfficiency": 2, "monetization": 5, "defensibility": 4, "risk": 3},
+      "sources": ["https://elsaspeak.com/en/elsa-subscription"]
+    },
+    {
+      "id": "accessible-reader",
+      "name": "Accessible text-to-speech reading workspace",
+      "category": "accessibility",
+      "incumbents": ["Speechify"],
+      "pricingSignal": "Speechify Premium is commonly listed around $139/year",
+      "wedge": "System voices, document OCR, reading focus modes, local highlights, and optional premium voices by credit",
+      "firstIntents": ["Read clipboard", "Continue document", "Slow down"],
+      "metrics": {"pain": 5, "frequency": 5, "demand": 5, "aiLeverage": 4, "nativeLeverage": 5, "buildSpeed": 4, "opsEfficiency": 4, "monetization": 4, "defensibility": 4, "risk": 2},
+      "sources": ["https://speechify.com/pricing/"]
+    },
+    {
+      "id": "medication-log",
+      "name": "Private medication reminder and care log",
+      "category": "health",
+      "incumbents": ["Medisafe"],
+      "pricingSignal": "Medication apps often gate unlimited medicines, reports, or interaction tools behind annual subscriptions",
+      "wedge": "Safety-critical reminders remain free, local records, caregiver export, and explicit non-diagnostic boundaries",
+      "firstIntents": ["Log dose", "When is next dose", "Show missed doses"],
+      "metrics": {"pain": 5, "frequency": 5, "demand": 5, "aiLeverage": 2, "nativeLeverage": 5, "buildSpeed": 3, "opsEfficiency": 5, "monetization": 3, "defensibility": 4, "risk": 5},
+      "sources": ["https://www.medisafe.com/"]
+    },
+    {
+      "id": "pantry-meal",
+      "name": "Pantry-aware meal and grocery planner",
+      "category": "lifestyle",
+      "incumbents": ["Mealime", "Paprika"],
+      "pricingSignal": "Mealime Pro is around $2.99/month while larger nutrition suites cost substantially more",
+      "wedge": "Local pantry, waste reduction, shared grocery list, recipe import, and budget-constrained generation",
+      "firstIntents": ["Add pantry item", "Plan dinner", "Open grocery list"],
+      "metrics": {"pain": 5, "frequency": 5, "demand": 5, "aiLeverage": 5, "nativeLeverage": 4, "buildSpeed": 3, "opsEfficiency": 4, "monetization": 4, "defensibility": 4, "risk": 3},
+      "sources": ["https://www.mealime.com/"]
+    },
+    {
+      "id": "photo-cleanup",
+      "name": "Explainable photo cleanup and curation",
+      "category": "photo-video",
+      "incumbents": ["Cleanup", "Gemini Photos"],
+      "pricingSignal": "Photo cleanup utilities frequently use weekly or annual subscriptions for duplicate detection",
+      "wedge": "Local Photos analysis, reversible review queues, explainable similarity, and no cloud upload",
+      "firstIntents": ["Review screenshots", "Find duplicates", "Show large videos"],
+      "metrics": {"pain": 4, "frequency": 3, "demand": 5, "aiLeverage": 4, "nativeLeverage": 5, "buildSpeed": 4, "opsEfficiency": 5, "monetization": 4, "defensibility": 3, "risk": 2},
+      "sources": ["https://apps.apple.com/us/genre/ios-photo-video/id6008"]
+    },
+    {
+      "id": "focus-sound",
+      "name": "Adaptive focus sound and routine engine",
+      "category": "health-fitness",
+      "incumbents": ["Endel", "Brain.fm"],
+      "pricingSignal": "Adaptive sound apps commonly charge recurring annual subscriptions",
+      "wedge": "Procedural local sound, calendar-aware sessions, no streaming dependency, and reusable focus routines",
+      "firstIntents": ["Start focus sound", "Set session length", "End session"],
+      "metrics": {"pain": 3, "frequency": 5, "demand": 4, "aiLeverage": 3, "nativeLeverage": 5, "buildSpeed": 4, "opsEfficiency": 5, "monetization": 3, "defensibility": 3, "risk": 1},
+      "sources": ["https://endel.io/"]
+    },
+    {
+      "id": "pet-care",
+      "name": "Shared pet care and health timeline",
+      "category": "lifestyle",
+      "incumbents": ["11pets", "Pawtrack"],
+      "pricingSignal": "Pet care apps fragment reminders, records, and household collaboration across premium tiers",
+      "wedge": "Local pet timeline, household assignments, document scan, feeding and medication reminders",
+      "firstIntents": ["Log feeding", "Log walk", "Show next care task"],
+      "metrics": {"pain": 4, "frequency": 5, "demand": 4, "aiLeverage": 3, "nativeLeverage": 5, "buildSpeed": 4, "opsEfficiency": 4, "monetization": 4, "defensibility": 4, "risk": 3},
+      "sources": ["https://www.11pets.com/"]
+    },
+    {
+      "id": "wardrobe-memory",
+      "name": "Private wardrobe and outfit memory",
+      "category": "lifestyle",
+      "incumbents": ["Stylebook", "Whering"],
+      "pricingSignal": "Wardrobe apps often trade free access for ads, subscriptions, or closed catalogs",
+      "wedge": "Local garment segmentation, wear-cost tracking, weather-aware suggestions, and open export",
+      "firstIntents": ["Log outfit", "What can I wear", "Show unworn items"],
+      "metrics": {"pain": 3, "frequency": 4, "demand": 4, "aiLeverage": 5, "nativeLeverage": 4, "buildSpeed": 3, "opsEfficiency": 5, "monetization": 3, "defensibility": 4, "risk": 2},
+      "sources": ["https://www.stylebookapp.com/"]
+    }
+  ]
+}
