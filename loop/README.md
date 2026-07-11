@@ -48,12 +48,13 @@ python3 scripts/loopctl.py block clearday \
   --id signing --category account --summary "Device signing unavailable" \
   --user-action-required --fallback "Continue in Simulator"
 python3 scripts/loopctl.py git-snapshot clearday --record
-python3 scripts/loopctl.py checkpoint clearday --message "first planning slice"
 ```
 
 Builder commands default to a dry run. `--execute` is required to run external
-commands. Checkpoints default to a plan and require `--commit` to create a Git
-commit. A checkpoint refuses to commit when unrelated files are already staged.
+commands. The legacy `loopctl checkpoint` command is retained only for old
+single-repository manifests. External product repositories use their own
+`scripts/create-checkpoint.sh` after merge readiness, so ordinary commits remain
+quiet and checkpoints are annotated, verified milestones.
 
 ## Truthful evidence
 
@@ -87,5 +88,6 @@ may remain valid when `main` moves forward; `status` then reports
 3. Record evidence until the phase gate is complete.
 4. Advance the product and build one vertical slice.
 5. Capture build, test, runtime, and learning events.
-6. Create a product-scoped Git checkpoint.
+6. Run the product repository's explicit verified checkpoint script when the
+   slice is a meaningful recovery point.
 7. Repeat or move the product to release, hold, pivot, or killed status.
