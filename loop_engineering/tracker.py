@@ -168,7 +168,10 @@ def product_status(paths: LoopPaths, product_id: str) -> dict[str, Any]:
         "repository": repository,
         "latestChecker": latest_checker,
         "checkerStale": bool(latest_checker)
-        and checker_data.get("head") != repository.get("head"),
+        and (
+            checker_data.get("head") != repository.get("head")
+            or repository.get("dirty") is not False
+        ),
         "latestRelease": latest_release,
         "releaseBehindMain": bool(latest_release)
         and bool(repository.get("mainHead"))
