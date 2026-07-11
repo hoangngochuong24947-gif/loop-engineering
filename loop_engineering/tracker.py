@@ -116,11 +116,20 @@ def gate_status(paths: LoopPaths, product_id: str) -> dict[str, Any]:
             and data.get("head") == state.get("head")
         )
 
-    present = {
-        event.get("kind")
-        for event in events
-        if event.get("kind") in required and valid(event)
-    }
+    present: set[str] = set()
+    for kind in required:
+        matching = [
+            event
+            for event in events
+            if event.get("phase") == phase and event.get("kind") == kind
+        ]
+        if not matching:
+            continue
+        if kind in RESERVED_EVIDENCE_KINDS:
+            if valid(matching[-1]):
+                present.add(kind)
+        elif any(valid(event) for event in matching):
+            present.add(kind)
     missing = [kind for kind in required if kind not in present]
     return {
         "phase": phase,
@@ -143,16 +152,15 @@ def product_status(paths: LoopPaths, product_id: str) -> dict[str, Any]:
         (event for event in reversed(events) if event.get("kind") == "release_result"),
         None,
     )
-    resolved_blockers = {
-        event.get("data", {}).get("blockerId")
-        for event in events
-        if event.get("kind") == "blocker_resolved"
-    }
+    blocker_state: dict[str, dict[str, Any]] = {}
+    for event in events:
+        if event.get("kind") not in {"blocker", "blocker_resolved"}:
+            continue
+        blocker_id = event.get("data", {}).get("blockerId")
+        if isinstance(blocker_id, str) and blocker_id:
+            blocker_state[blocker_id] = event
     blockers = [
-        event
-        for event in events
-        if event.get("kind") == "blocker"
-        and event.get("data", {}).get("blockerId") not in resolved_blockers
+        event for event in blocker_state.values() if event.get("kind") == "blocker"
     ]
     checker_data = latest_checker.get("data", {}) if latest_checker else {}
     release_data = latest_release.get("data", {}) if latest_release else {}

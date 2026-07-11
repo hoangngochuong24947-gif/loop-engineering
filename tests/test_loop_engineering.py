@@ -193,6 +193,16 @@ class LoopEngineeringTests(unittest.TestCase):
         self.assertTrue(run_action(self.paths, "external", "build", execute=True)["success"])
         self.assertTrue(gate_status(self.paths, "external")["ready"])
 
+        product["commands"] = {"build": [["python3", "-c", "raise SystemExit(1)"]]}
+        self.paths.product("external").write_text(json.dumps(product), encoding="utf-8")
+        self.assertFalse(run_action(self.paths, "external", "build", execute=True)["success"])
+        self.assertFalse(gate_status(self.paths, "external")["ready"])
+
+        product["commands"] = {"build": [["python3", "-c", "print('ok again')"]]}
+        self.paths.product("external").write_text(json.dumps(product), encoding="utf-8")
+        self.assertTrue(run_action(self.paths, "external", "build", execute=True)["success"])
+        self.assertTrue(gate_status(self.paths, "external")["ready"])
+
         (repository / "change.txt").write_text("new head\n", encoding="utf-8")
         subprocess.run(["git", "add", "change.txt"], cwd=repository, check=True)
         subprocess.run(["git", "commit", "-m", "new head"], cwd=repository, check=True, stdout=subprocess.DEVNULL)
@@ -223,6 +233,28 @@ class LoopEngineeringTests(unittest.TestCase):
                 checker="same-agent",
                 verdict="pass",
             )
+
+        record_checker(
+            self.paths,
+            "external",
+            issue="1",
+            builder="builder-a",
+            checker="checker-b",
+            verdict="pass",
+            head=head,
+        )
+        self.assertTrue(gate_status(self.paths, "external")["ready"])
+
+        record_checker(
+            self.paths,
+            "external",
+            issue="1",
+            builder="builder-a",
+            checker="checker-b",
+            verdict="changes-required",
+            head=head,
+        )
+        self.assertFalse(gate_status(self.paths, "external")["ready"])
 
         record_checker(
             self.paths,
@@ -299,6 +331,15 @@ class LoopEngineeringTests(unittest.TestCase):
             summary="Signing configured",
         )
         self.assertFalse(product_status(self.paths, "external")["openBlockers"])
+        record_blocker(
+            self.paths,
+            "external",
+            blocker_id="signing",
+            category="account",
+            summary="Signing expired again",
+            user_action_required=True,
+        )
+        self.assertEqual(len(product_status(self.paths, "external")["openBlockers"]), 1)
 
     def test_doctor_fails_for_required_missing_repository(self) -> None:
         missing = self.root / "missing-repository"
