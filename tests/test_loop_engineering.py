@@ -236,6 +236,8 @@ class LoopEngineeringTests(unittest.TestCase):
         self.assertTrue(gate_status(self.paths, "external")["ready"])
 
         (repository / "after-check.txt").write_text("stale\n", encoding="utf-8")
+        self.assertTrue(product_status(self.paths, "external")["checkerStale"])
+        self.assertFalse(gate_status(self.paths, "external")["ready"])
         subprocess.run(["git", "add", "after-check.txt"], cwd=repository, check=True)
         subprocess.run(["git", "commit", "-m", "after check"], cwd=repository, check=True, stdout=subprocess.DEVNULL)
         status = product_status(self.paths, "external")
