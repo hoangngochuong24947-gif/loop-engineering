@@ -8,8 +8,9 @@ It combines:
 - a scored market opportunity portfolio;
 - phase gates from discovery through release;
 - append-only JSONL tracking;
+- external product-repository registration and live Git state;
 - reproducible product builder commands;
-- build and test evidence capture;
+- build, test, runtime, Checker, release, and blocker evidence bound to Git SHAs;
 - Git snapshots and guarded product-scoped checkpoints;
 - checkpoint tags and non-destructive rollback branches.
 
@@ -38,6 +39,11 @@ python3 scripts/loopctl.py portfolio
 
 See [loop/README.md](loop/README.md) for commands and file layout.
 
+The tracker repository does not contain product source. Each product manifest
+registers its own clone path, public repository URL, and default branch. Command
+execution occurs inside that product repository, and failed, dirty, or stale
+evidence cannot satisfy a phase gate.
+
 ## Tests
 
 ```bash
@@ -53,15 +59,23 @@ Install the repository hooks:
 ./scripts/install-hooks.sh
 ```
 
-Every successful commit receives a local `checkpoint/...` tag. To inspect or
-continue from a checkpoint without rewriting history:
+Ordinary commits do not create tags. Create a checkpoint only for a clean,
+pushed milestone; verification runs before an annotated tag is pushed:
+
+```bash
+./scripts/create-checkpoint.sh truthful-tracker
+```
+
+To inspect or continue from a checkpoint without rewriting history or changing
+the active worktree:
 
 ```bash
 ./scripts/restore-checkpoint.sh checkpoint/20260710-223000-abc1234
 ```
 
-The restore command creates a new branch at the selected checkpoint. It never
-runs `reset --hard` or discards the current branch.
+The restore command creates a new branch in an isolated worktree at the selected
+checkpoint or release tag. It never runs `reset --hard`, switches the active
+worktree, or discards local changes.
 
 ## License
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,7 +93,7 @@ def load_config(paths: LoopPaths) -> dict[str, Any]:
 
 def load_product(paths: LoopPaths, product_id: str) -> dict[str, Any]:
     product = load_json(paths.product(product_id))
-    required = ("id", "name", "targetPath", "project", "loop", "commands")
+    required = ("id", "name", "project", "loop", "commands")
     missing = [field for field in required if field not in product]
     if missing:
         raise LoopError(f"Product {product_id} is missing: {', '.join(missing)}")
@@ -100,7 +101,81 @@ def load_product(paths: LoopPaths, product_id: str) -> dict[str, Any]:
         raise LoopError(
             f"Product manifest id {product['id']!r} does not match {product_id!r}"
         )
+    repository = product.get("repository")
+    if not isinstance(repository, dict) and not product.get("targetPath"):
+        raise LoopError(
+            f"Product {product_id} must define repository.path or targetPath"
+        )
+    if isinstance(repository, dict) and not repository.get("path"):
+        raise LoopError(f"Product {product_id} repository must define path")
     return product
+
+
+def repository_path(paths: LoopPaths, product: dict[str, Any]) -> Path:
+    repository = product.get("repository")
+    raw_path = repository.get("path") if isinstance(repository, dict) else None
+    raw_path = raw_path or product.get("targetPath")
+    if not raw_path:
+        raise LoopError(f"Product {product.get('id', '<unknown>')} has no repository path")
+    candidate = Path(str(raw_path)).expanduser()
+    if not candidate.is_absolute():
+        candidate = paths.root / candidate
+    return candidate.resolve()
+
+
+def product_repository_path(paths: LoopPaths, product_id: str) -> Path:
+    return repository_path(paths, load_product(paths, product_id))
+
+
+def _git(repository: Path, *arguments: str, check: bool = True) -> str:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=repository,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if check and completed.returncode != 0:
+        message = completed.stderr.strip() or completed.stdout.strip()
+        raise LoopError(f"git {' '.join(arguments)} failed in {repository}: {message}")
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
+
+
+def repository_state(paths: LoopPaths, product_id: str) -> dict[str, Any]:
+    product = load_product(paths, product_id)
+    repository = repository_path(paths, product)
+    repository_config = product.get("repository", {})
+    default_branch = str(repository_config.get("defaultBranch", "main"))
+    required_local = bool(repository_config.get("requiredLocal", True))
+    state: dict[str, Any] = {
+        "path": str(repository),
+        "url": repository_config.get("url"),
+        "defaultBranch": default_branch,
+        "requiredLocal": required_local,
+        "available": repository.is_dir(),
+        "isGitRepository": False,
+        "branch": None,
+        "head": None,
+        "mainHead": None,
+        "dirty": None,
+    }
+    if not repository.is_dir():
+        return state
+    if _git(repository, "rev-parse", "--is-inside-work-tree", check=False) != "true":
+        return state
+    state["isGitRepository"] = True
+    state["branch"] = _git(repository, "branch", "--show-current", check=False) or None
+    state["head"] = _git(repository, "rev-parse", "HEAD", check=False) or None
+    state["dirty"] = bool(_git(repository, "status", "--porcelain=v1", check=False))
+    for reference in (f"origin/{default_branch}", default_branch):
+        value = _git(repository, "rev-parse", reference, check=False)
+        if value:
+            state["mainHead"] = value
+            break
+    return state
 
 
 def score_opportunity(

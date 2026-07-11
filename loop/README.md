@@ -37,13 +37,49 @@ python3 scripts/loopctl.py advance clearday
 python3 scripts/loopctl.py build clearday
 python3 scripts/loopctl.py build clearday --execute
 python3 scripts/loopctl.py verify clearday --execute
+python3 scripts/loopctl.py runtime-record clearday \
+  --actor simulator-agent --summary "Created and saved a plan" \
+  --artifact https://example.com/runtime-evidence
+python3 scripts/loopctl.py checker-record clearday \
+  --issue 12 --builder builder-a --checker checker-b --verdict pass
+python3 scripts/loopctl.py release-record clearday \
+  --tag v0.1.0-alpha.1 --url https://github.com/OWNER/REPO/releases/tag/v0.1.0-alpha.1
+python3 scripts/loopctl.py block clearday \
+  --id signing --category account --summary "Device signing unavailable" \
+  --user-action-required --fallback "Continue in Simulator"
 python3 scripts/loopctl.py git-snapshot clearday --record
-python3 scripts/loopctl.py checkpoint clearday --message "first planning slice"
 ```
 
 Builder commands default to a dry run. `--execute` is required to run external
-commands. Checkpoints default to a plan and require `--commit` to create a Git
-commit. A checkpoint refuses to commit when unrelated files are already staged.
+commands. The legacy `loopctl checkpoint` command is retained only for old
+single-repository manifests. External product repositories use their own
+`scripts/create-checkpoint.sh` after merge readiness, so ordinary commits remain
+quiet and checkpoints are annotated, verified milestones.
+
+## Truthful evidence
+
+Product manifests use an external repository registration:
+
+```json
+{
+  "repository": {
+    "path": "../clearday-ios",
+    "url": "https://github.com/OWNER/clearday-ios",
+    "defaultBranch": "main",
+    "requiredLocal": false
+  }
+}
+```
+
+`doctor` reports whether each clone actually exists and is a Git repository.
+`status` shows current branch/head, default-branch head, stale Checker evidence,
+release drift, open blockers, and whether user action is required.
+
+Build/test/runtime/Checker evidence is reserved for structured commands. It
+must pass, come from a clean product worktree, and match the current SHA.
+Manual `track --kind test_result` cannot forge a green gate. Release evidence
+may remain valid when `main` moves forward; `status` then reports
+`releaseBehindMain: true` so the next prerelease decision is explicit.
 
 ## Batch product flow
 
@@ -52,6 +88,6 @@ commit. A checkpoint refuses to commit when unrelated files are already staged.
 3. Record evidence until the phase gate is complete.
 4. Advance the product and build one vertical slice.
 5. Capture build, test, runtime, and learning events.
-6. Create a product-scoped Git checkpoint.
+6. Run the product repository's explicit verified checkpoint script when the
+   slice is a meaningful recovery point.
 7. Repeat or move the product to release, hold, pivot, or killed status.
-

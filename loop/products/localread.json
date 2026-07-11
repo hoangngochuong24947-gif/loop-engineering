@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "id": "localread",
+  "name": "LocalRead",
+  "ideaId": "accessible-reader",
+  "repository": {
+    "path": "../localread-ios",
+    "url": "https://github.com/hoangngochuong24947-gif/localread-ios",
+    "defaultBranch": "main",
+    "requiredLocal": false
+  },
+  "ownedPaths": [
+    "loop/products/localread.json",
+    "loop/tracker/localread.jsonl"
+  ],
+  "project": {
+    "type": "xcode",
+    "projectPath": "LocalRead.xcodeproj",
+    "scheme": "LocalRead",
+    "bundleId": "io.github.hoangngochuong24947gif.LocalRead",
+    "simulatorName": "iPhone 17"
+  },
+  "loop": {
+    "phase": "release",
+    "cycle": 1,
+    "hypothesis": "People will prefer a private system-voice reader with a durable local queue over an expensive cloud subscription.",
+    "successMetrics": [
+      "Paste or import text and begin playback within 45 seconds",
+      "Playback state survives relaunch",
+      "Core reading works with no account, network, or paid voice"
+    ],
+    "killCriteria": [
+      "System speech quality is insufficient for sustained reading",
+      "Document import requires a hosted parser for the first useful slice"
+    ]
+  },
+  "commands": {
+    "build": [["./scripts/verify.sh"]],
+    "test": [["swift", "test"]]
+  }
+}

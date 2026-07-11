@@ -14,9 +14,9 @@
     "decide": ["selected_direction", "success_metric", "kill_criteria"],
     "design": ["architecture", "vertical_slice", "verification_plan"],
     "build": ["build_result"],
-    "verify": ["test_result", "runtime_proof"],
+    "verify": ["test_result", "runtime_proof", "checker_result"],
     "learn": ["learning", "next_hypothesis"],
-    "release": ["release_decision"]
+    "release": ["release_result"]
   },
   "scoring": {
     "pain": {"weight": 1.4, "direction": "higher"},
@@ -31,7 +31,7 @@
     "risk": {"weight": 1.2, "direction": "lower"}
   },
   "git": {
-    "branchPattern": "product/{product}/cycle-{cycle}",
+    "branchPattern": "agent/{issue}-{slug}",
     "commitPattern": "loop({product}): {message}"
   }
 }
