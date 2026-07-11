@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .claims import resolve_claim_repository
+from .claims import claim_status, load_claim, resolve_claim_repository
 from .model import (
     clean_git_environment,
     LoopError,
@@ -19,6 +19,40 @@ from .model import (
     workspace_root,
 )
 from .tracker import append_event
+
+
+VERIFICATION_PROFILES = {"fast", "focused", "full", "auto"}
+FULL_VERIFICATION_RISKS = {
+    "high",
+    "data-migration",
+    "external-write",
+    "external-writes",
+    "governance",
+    "shared-architecture",
+    "release",
+}
+
+
+def select_verification_profile(profile: str, risk: str) -> str:
+    if profile not in VERIFICATION_PROFILES:
+        raise LoopError(f"Unknown verification profile: {profile}")
+    if not risk.strip():
+        raise LoopError("Verification risk must not be empty")
+    if profile != "auto":
+        return profile
+    return "full" if risk in FULL_VERIFICATION_RISKS else "focused"
+
+
+def _verification_actions(product: dict[str, Any], profile: str) -> list[str]:
+    available = [
+        action for action in ("build", "test") if product["commands"].get(action)
+    ]
+    if not available:
+        return []
+    if profile == "full":
+        return available
+    preferred = "build" if profile == "fast" else "test"
+    return [preferred] if preferred in available else [available[0]]
 
 
 def _command_context(
@@ -187,9 +221,14 @@ def run_verification(
     execute: bool,
     issue: str | None = None,
     builder: str | None = None,
+    risk: str = "low",
+    profile: str = "auto",
 ) -> dict[str, Any]:
     product = load_product(paths, product_id)
-    actions = [action for action in ("build", "test") if product["commands"].get(action)]
+    selected_profile = (
+        select_verification_profile(profile, risk) if issue is not None else "full"
+    )
+    actions = _verification_actions(product, selected_profile)
     if not actions:
         raise LoopError(f"Product {product_id} has no build or test commands")
     results = [
@@ -205,11 +244,59 @@ def run_verification(
     ]
     success_values = [result["success"] for result in results]
     success = None if not execute else all(value is True for value in success_values)
-    return {
+    receipt: dict[str, Any] = {
+        "schema": "loop-verification/v1",
         "product": product_id,
         "execute": execute,
         "issue": issue,
         "builder": builder,
+        "risk": risk if issue is not None else None,
+        "requestedProfile": profile if issue is not None else None,
+        "profile": selected_profile,
         "success": success,
         "results": results,
     }
+    if issue is None:
+        return receipt
+
+    claim = load_claim(paths, product_id, issue)
+    status = claim_status(paths, product_id, issue)
+    receipt.update(
+        {
+            "baseSha": claim["baseSha"],
+            "head": status["head"],
+            "branch": status["branch"],
+            "dirty": status["dirty"],
+            "worktree": claim["worktree"],
+            "commands": [
+                command
+                for result in results
+                for command in result.get("commands", [])
+            ],
+            "artifactPaths": [
+                result["runPath"] for result in results if result.get("runPath")
+            ],
+        }
+    )
+    if not execute:
+        return receipt
+
+    runs = workspace_root(paths) / "loop" / "runs" / "verification"
+    runs.mkdir(parents=True, exist_ok=True)
+    receipt_path = runs / (
+        f"{product_id}-issue-{issue}-{status['head'][:12]}-"
+        f"{uuid.uuid4().hex}.json"
+    )
+    with receipt_path.open("x", encoding="utf-8") as handle:
+        json.dump(receipt, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+    receipt["receiptPath"] = str(receipt_path.relative_to(workspace_root(paths)))
+    append_event(
+        paths,
+        product_id,
+        kind="verification_result",
+        summary=f"{selected_profile} verification {'passed' if success else 'failed'} for issue {issue}",
+        data={key: value for key, value in receipt.items() if key != "results"},
+        trusted=True,
+    )
+    return receipt
