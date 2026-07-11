@@ -13,6 +13,39 @@ class LoopError(RuntimeError):
     pass
 
 
+GIT_REPOSITORY_ENVIRONMENT = {
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_DIR",
+    "GIT_GRAFT_FILE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_INTERNAL_SUPER_PREFIX",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PREFIX",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_SHALLOW_FILE",
+    "GIT_WORK_TREE",
+}
+
+
+def clean_git_environment() -> dict[str, str]:
+    """Return an environment that cannot redirect Git into another repository."""
+    environment = os.environ.copy()
+    for key in tuple(environment):
+        if (
+            key in GIT_REPOSITORY_ENVIRONMENT
+            or key.startswith("GIT_CONFIG_KEY_")
+            or key.startswith("GIT_CONFIG_VALUE_")
+        ):
+            environment.pop(key, None)
+    return environment
+
+
 @dataclass(frozen=True)
 class LoopPaths:
     root: Path
@@ -142,6 +175,7 @@ def _git(repository: Path, *arguments: str, check: bool = True) -> str:
     completed = subprocess.run(
         ["git", *arguments],
         cwd=repository,
+        env=clean_git_environment(),
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

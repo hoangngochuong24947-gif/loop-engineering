@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .model import (
+    clean_git_environment,
     LoopError,
     LoopPaths,
     load_config,
@@ -26,6 +27,7 @@ def _git(repository: Path, *arguments: str, check: bool = True) -> str:
     completed = subprocess.run(
         ["git", *arguments],
         cwd=repository,
+        env=clean_git_environment(),
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

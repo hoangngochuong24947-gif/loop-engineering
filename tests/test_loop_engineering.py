@@ -21,6 +21,7 @@ from loop_engineering.builder import resolve_commands, run_action
 from loop_engineering.cli import build_parser, command_doctor, main as cli_main
 from loop_engineering.gitops import git_snapshot
 from loop_engineering.model import (
+    clean_git_environment,
     LoopError,
     LoopPaths,
     product_repository_path,
@@ -44,11 +45,10 @@ from loop_engineering.tracker import (
 
 class LoopEngineeringTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.git_environment = {
-            key: os.environ.pop(key)
-            for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX")
-            if key in os.environ
-        }
+        self.original_environment = os.environ.copy()
+        isolated_environment = clean_git_environment()
+        os.environ.clear()
+        os.environ.update(isolated_environment)
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
         self.paths = LoopPaths(self.root)
@@ -92,7 +92,8 @@ class LoopEngineeringTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
-        os.environ.update(self.git_environment)
+        os.environ.clear()
+        os.environ.update(self.original_environment)
 
     def make_repository(self, name: str = "repo") -> Path:
         repository = self.root / name
@@ -756,6 +757,84 @@ class LoopEngineeringTests(unittest.TestCase):
                 issue="3",
                 builder="builder-b",
             )
+
+    def test_hook_git_environment_cannot_redirect_product_operations(self) -> None:
+        sentinel = self.make_repository("sentinel")
+        repository = self.make_repository("product")
+        self.write_external_product(
+            repository,
+            phase="build",
+            commands={"build": [["git", "rev-parse", "--show-toplevel"]]},
+        )
+        sentinel_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=sentinel,
+            env=clean_git_environment(),
+            text=True,
+            check=True,
+            stdout=subprocess.PIPE,
+        ).stdout.strip()
+        os.environ.update(
+            {
+                "GIT_DIR": str(sentinel / ".git"),
+                "GIT_WORK_TREE": str(sentinel),
+                "GIT_INDEX_FILE": str(sentinel / ".git" / "index"),
+                "GIT_COMMON_DIR": str(sentinel / ".git"),
+            }
+        )
+
+        claim = claim_issue(
+            self.paths,
+            "external",
+            issue="3",
+            slug="hook-isolation",
+            builder="builder-a",
+        )
+        result = run_action(
+            self.paths,
+            "external",
+            "build",
+            execute=True,
+            issue="3",
+            builder="builder-a",
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["steps"][0]["outputTail"].strip(), claim["worktree"])
+        clean_environment = clean_git_environment()
+        self.assertEqual(
+            subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=sentinel,
+                env=clean_environment,
+                text=True,
+                check=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip(),
+            sentinel_head,
+        )
+        self.assertEqual(
+            subprocess.run(
+                ["git", "branch", "--list", claim["branch"]],
+                cwd=sentinel,
+                env=clean_environment,
+                text=True,
+                check=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip(),
+            "",
+        )
+        self.assertEqual(
+            subprocess.run(
+                ["git", "config", "--get", "core.bare"],
+                cwd=sentinel,
+                env=clean_environment,
+                text=True,
+                check=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip(),
+            "false",
+        )
 
     def test_cli_exposes_issue_lifecycle_and_builder_routing_arguments(self) -> None:
         parser = build_parser()

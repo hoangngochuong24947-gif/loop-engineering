@@ -7,6 +7,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .model import (
+    clean_git_environment,
     LoopError,
     LoopPaths,
     load_config,
@@ -200,6 +201,7 @@ def _git(repository: Any, *arguments: str) -> str:
     completed = subprocess.run(
         ["git", *arguments],
         cwd=repository,
+        env=clean_git_environment(),
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -312,6 +314,7 @@ def record_release(
     completed = subprocess.run(
         ["git", "merge-base", "--is-ancestor", release_head, main_head],
         cwd=repository,
+        env=clean_git_environment(),
         check=False,
     )
     if completed.returncode != 0:

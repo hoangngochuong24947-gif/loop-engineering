@@ -7,7 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from .builder import run_verification
-from .model import LoopError, LoopPaths, load_config, load_product, repository_path
+from .model import (
+    clean_git_environment,
+    LoopError,
+    LoopPaths,
+    load_config,
+    load_product,
+    repository_path,
+)
 from .tracker import append_event
 
 
@@ -15,6 +22,7 @@ def _git(paths: LoopPaths, *arguments: str, check: bool = True) -> str:
     completed = subprocess.run(
         ["git", *arguments],
         cwd=paths.root,
+        env=clean_git_environment(),
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -30,6 +38,7 @@ def _git_at(repository: Path, *arguments: str, check: bool = True) -> str:
     completed = subprocess.run(
         ["git", *arguments],
         cwd=repository,
+        env=clean_git_environment(),
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

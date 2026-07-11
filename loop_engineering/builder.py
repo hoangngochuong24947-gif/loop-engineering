@@ -9,6 +9,7 @@ from typing import Any
 
 from .claims import resolve_claim_repository
 from .model import (
+    clean_git_environment,
     LoopError,
     LoopPaths,
     load_product,
@@ -125,6 +126,7 @@ def run_action(
         completed = subprocess.run(
             command,
             cwd=repository,
+            env=clean_git_environment(),
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
