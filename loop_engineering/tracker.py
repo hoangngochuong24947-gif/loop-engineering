@@ -105,6 +105,10 @@ def gate_status(paths: LoopPaths, product_id: str) -> dict[str, Any]:
             isinstance(data, dict)
             and data.get("success") is True
             and data.get("dirty") is False
+            and not (
+                data.get("issue")
+                and data.get("branch") != state.get("defaultBranch")
+            )
         )
         if not base_valid:
             return False

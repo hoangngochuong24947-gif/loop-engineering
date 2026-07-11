@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -9,12 +10,20 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
+from loop_engineering.claims import (
+    claim_issue,
+    claim_status,
+    close_claim,
+    load_claim,
+    resolve_claim_repository,
+)
 from loop_engineering.builder import resolve_commands, run_action
-from loop_engineering.cli import command_doctor
+from loop_engineering.cli import build_parser, command_doctor, main as cli_main
 from loop_engineering.gitops import git_snapshot
 from loop_engineering.model import (
     LoopError,
     LoopPaths,
+    product_repository_path,
     rank_portfolio,
     repository_state,
     score_opportunity,
@@ -35,6 +44,11 @@ from loop_engineering.tracker import (
 
 class LoopEngineeringTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.git_environment = {
+            key: os.environ.pop(key)
+            for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX")
+            if key in os.environ
+        }
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
         self.paths = LoopPaths(self.root)
@@ -78,6 +92,7 @@ class LoopEngineeringTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
+        os.environ.update(self.git_environment)
 
     def make_repository(self, name: str = "repo") -> Path:
         repository = self.root / name
@@ -356,6 +371,548 @@ class LoopEngineeringTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertFalse(result["ok"])
         self.assertIn("repository is unavailable", result["errors"][0])
+
+    def test_issue_claim_creates_clean_worktree_at_exact_base_sha(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(repository, phase="build", commands={})
+        base_sha = repository_state(self.paths, "external")["head"]
+
+        claim = claim_issue(
+            self.paths,
+            "external",
+            issue="3",
+            slug="issue-claim-lifecycle",
+            builder="builder-a",
+        )
+
+        self.assertEqual(claim["baseSha"], base_sha)
+        self.assertEqual(claim["branch"], "agent/3-issue-claim-lifecycle")
+        self.assertEqual(claim["status"], "active")
+        worktree = Path(claim["worktree"])
+        self.assertTrue(worktree.is_dir())
+        self.assertEqual(
+            subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=worktree,
+                text=True,
+                check=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip(),
+            base_sha,
+        )
+        self.assertEqual(
+            subprocess.run(
+                ["git", "status", "--porcelain=v1"],
+                cwd=worktree,
+                text=True,
+                check=True,
+                stdout=subprocess.PIPE,
+            ).stdout,
+            "",
+        )
+        self.assertEqual(load_claim(self.paths, "external", "3"), claim)
+
+    def test_duplicate_issue_claim_is_rejected_without_replacing_receipt(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(repository, phase="build", commands={})
+        original = claim_issue(
+            self.paths,
+            "external",
+            issue="3",
+            slug="first-slice",
+            builder="builder-a",
+        )
+
+        with self.assertRaisesRegex(LoopError, "already claimed"):
+            claim_issue(
+                self.paths,
+                "external",
+                issue="3",
+                slug="second-slice",
+                builder="builder-b",
+            )
+
+        self.assertEqual(load_claim(self.paths, "external", "3"), original)
+
+    def test_claim_branch_collision_preserves_existing_branch_and_leaves_no_receipt(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(repository, phase="build", commands={})
+        branch = "agent/3-existing"
+        subprocess.run(["git", "branch", branch], cwd=repository, check=True)
+
+        with self.assertRaises(LoopError):
+            claim_issue(
+                self.paths,
+                "external",
+                issue="3",
+                slug="existing",
+                builder="builder-a",
+            )
+
+        self.assertEqual(
+            subprocess.run(
+                ["git", "branch", "--list", branch],
+                cwd=repository,
+                text=True,
+                check=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip(),
+            branch,
+        )
+        with self.assertRaisesRegex(LoopError, "not claimed"):
+            load_claim(self.paths, "external", "3")
+
+    def test_claim_path_collision_leaves_no_branch_or_receipt(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(repository, phase="build", commands={})
+        collision = repository.parent / ".worktrees" / repository.name / "3-existing"
+        collision.mkdir(parents=True)
+
+        with self.assertRaisesRegex(LoopError, "path already exists"):
+            claim_issue(
+                self.paths,
+                "external",
+                issue="3",
+                slug="existing",
+                builder="builder-a",
+            )
+
+        self.assertEqual(
+            subprocess.run(
+                ["git", "branch", "--list", "agent/3-existing"],
+                cwd=repository,
+                text=True,
+                check=True,
+                stdout=subprocess.PIPE,
+            ).stdout,
+            "",
+        )
+        with self.assertRaisesRegex(LoopError, "not claimed"):
+            load_claim(self.paths, "external", "3")
+
+    def test_dirty_stable_checkout_does_not_block_clean_issue_worktree(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(repository, phase="build", commands={})
+        (repository / "stable-dirty.txt").write_text("keep me\n", encoding="utf-8")
+
+        claim = claim_issue(
+            self.paths,
+            "external",
+            issue="3",
+            slug="isolated",
+            builder="builder-a",
+        )
+
+        self.assertTrue((repository / "stable-dirty.txt").exists())
+        self.assertFalse(claim_status(self.paths, "external", "3")["dirty"])
+
+    def test_claim_uses_configured_worktree_root(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(repository, phase="build", commands={})
+        config = json.loads(self.paths.config.read_text(encoding="utf-8"))
+        config["git"] = {
+            "branchPattern": "agent/{issue}-{slug}",
+            "worktreeRoot": "custom-worktrees/{repo}",
+        }
+        self.paths.config.write_text(json.dumps(config), encoding="utf-8")
+
+        claim = claim_issue(
+            self.paths,
+            "external",
+            issue="3",
+            slug="configured-root",
+            builder="builder-a",
+        )
+
+        self.assertEqual(
+            Path(claim["worktree"]),
+            (
+                self.root
+                / "custom-worktrees"
+                / repository.name
+                / "3-configured-root"
+            ).resolve(),
+        )
+
+    def test_product_relative_path_is_stable_from_tracker_linked_worktree(self) -> None:
+        tracker = self.root / "tracker"
+        tracker.mkdir()
+        product_repository = self.make_repository("product-repository")
+        loop_dir = tracker / "loop"
+        (loop_dir / "products").mkdir(parents=True)
+        (loop_dir / "tracker").mkdir()
+        (loop_dir / "config.json").write_text(
+            json.dumps({"phases": ["build"], "gates": {"build": []}}),
+            encoding="utf-8",
+        )
+        (loop_dir / "products" / "external.json").write_text(
+            json.dumps(
+                {
+                    "id": "external",
+                    "name": "External",
+                    "repository": {
+                        "path": "../product-repository",
+                        "defaultBranch": "main",
+                    },
+                    "project": {},
+                    "loop": {"phase": "build", "cycle": 1},
+                    "commands": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "init", "-b", "main"], cwd=tracker, check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(["git", "config", "user.name", "Loop Test"], cwd=tracker, check=True)
+        subprocess.run(["git", "config", "user.email", "loop@example.com"], cwd=tracker, check=True)
+        subprocess.run(["git", "add", "."], cwd=tracker, check=True)
+        subprocess.run(["git", "commit", "-m", "tracker"], cwd=tracker, check=True, stdout=subprocess.DEVNULL)
+        linked = self.root / ".worktrees" / "tracker" / "test"
+        linked.parent.mkdir(parents=True)
+        subprocess.run(
+            ["git", "worktree", "add", "-b", "agent/test", str(linked), "main"],
+            cwd=tracker,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+
+        self.assertEqual(
+            product_repository_path(LoopPaths(linked), "external"),
+            product_repository.resolve(),
+        )
+
+    def test_legacy_product_rejects_issue_claim_but_keeps_existing_command_resolution(self) -> None:
+        self.assertEqual(resolve_commands(self.paths, "sample", "build")[0][1], "Sample")
+        with self.assertRaisesRegex(LoopError, "repository manifest"):
+            claim_issue(
+                self.paths,
+                "sample",
+                issue="3",
+                slug="legacy",
+                builder="builder-a",
+            )
+
+    def test_issue_claim_rejects_unsafe_issue_and_slug_before_git_changes(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(repository, phase="build", commands={})
+
+        for issue, slug in (("../3", "safe"), ("3", "../escape"), ("3", "bad name")):
+            with self.subTest(issue=issue, slug=slug):
+                with self.assertRaisesRegex(LoopError, "safe Git name"):
+                    claim_issue(
+                        self.paths,
+                        "external",
+                        issue=issue,
+                        slug=slug,
+                        builder="builder-a",
+                    )
+
+        with self.assertRaisesRegex(LoopError, "safe Git name"):
+            load_claim(self.paths, "external", "../3")
+
+        self.assertEqual(
+            subprocess.run(
+                ["git", "branch", "--list", "agent/*"],
+                cwd=repository,
+                text=True,
+                check=True,
+                stdout=subprocess.PIPE,
+            ).stdout,
+            "",
+        )
+
+    def test_issue_claim_status_and_resolution_detect_builder_and_stale_worktree(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(repository, phase="build", commands={})
+        claim = claim_issue(
+            self.paths,
+            "external",
+            issue="3",
+            slug="claim-status",
+            builder="builder-a",
+        )
+
+        status = claim_status(self.paths, "external", "3")
+        self.assertEqual(status["state"], "active")
+        self.assertFalse(status["dirty"])
+        self.assertEqual(
+            resolve_claim_repository(
+                self.paths, "external", "3", builder="builder-a"
+            ),
+            Path(claim["worktree"]),
+        )
+        with self.assertRaisesRegex(LoopError, "belongs to builder-a"):
+            resolve_claim_repository(
+                self.paths, "external", "3", builder="builder-b"
+            )
+
+        subprocess.run(
+            ["git", "worktree", "remove", claim["worktree"]],
+            cwd=repository,
+            check=True,
+        )
+        self.assertEqual(claim_status(self.paths, "external", "3")["state"], "stale")
+        replacement = Path(claim["worktree"])
+        replacement.mkdir(parents=True)
+        subprocess.run(
+            ["git", "init", "-b", claim["branch"]],
+            cwd=replacement,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        self.assertEqual(claim_status(self.paths, "external", "3")["state"], "stale")
+        with self.assertRaisesRegex(LoopError, "stale"):
+            resolve_claim_repository(
+                self.paths, "external", "3", builder="builder-a"
+            )
+
+    def test_issue_close_rejects_dirty_worktree_and_preserves_branch(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(repository, phase="build", commands={})
+        claim = claim_issue(
+            self.paths,
+            "external",
+            issue="3",
+            slug="safe-close",
+            builder="builder-a",
+        )
+        worktree = Path(claim["worktree"])
+        dirty_file = worktree / "dirty.txt"
+        dirty_file.write_text("not committed\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(LoopError, "dirty"):
+            close_claim(
+                self.paths,
+                "external",
+                issue="3",
+                builder="builder-a",
+                result="merged",
+                merge_sha="abc123",
+            )
+        self.assertTrue(worktree.is_dir())
+
+        dirty_file.unlink()
+        closed = close_claim(
+            self.paths,
+            "external",
+            issue="3",
+            builder="builder-a",
+            result="merged",
+            merge_sha="abc123",
+        )
+        self.assertEqual(closed["status"], "closed")
+        self.assertEqual(closed["result"], "merged")
+        self.assertFalse(worktree.exists())
+        self.assertEqual(claim_status(self.paths, "external", "3")["state"], "closed")
+        self.assertEqual(
+            subprocess.run(
+                ["git", "branch", "--list", claim["branch"]],
+                cwd=repository,
+                text=True,
+                check=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip(),
+            claim["branch"],
+        )
+
+    def test_builder_command_runs_in_claimed_worktree_and_does_not_advance_product_gate(self) -> None:
+        repository = self.make_repository()
+        self.set_gate("build", ["build_result"])
+        self.write_external_product(
+            repository,
+            phase="build",
+            commands={"build": [["python3", "-c", "import os; print(os.getcwd())"]]},
+        )
+        claim = claim_issue(
+            self.paths,
+            "external",
+            issue="3",
+            slug="builder-cwd",
+            builder="builder-a",
+        )
+
+        result = run_action(
+            self.paths,
+            "external",
+            "build",
+            execute=True,
+            issue="3",
+            builder="builder-a",
+        )
+
+        self.assertTrue(result["success"])
+        self.assertIn(claim["worktree"], result["steps"][0]["outputTail"])
+        self.assertEqual(result["issue"], "3")
+        self.assertEqual(result["builder"], "builder-a")
+        self.assertEqual(result["worktree"], claim["worktree"])
+        self.assertEqual(result["branch"], claim["branch"])
+        self.assertFalse(gate_status(self.paths, "external")["ready"])
+
+        with self.assertRaisesRegex(LoopError, "belongs to builder-a"):
+            run_action(
+                self.paths,
+                "external",
+                "build",
+                execute=True,
+                issue="3",
+                builder="builder-b",
+            )
+
+    def test_cli_exposes_issue_lifecycle_and_builder_routing_arguments(self) -> None:
+        parser = build_parser()
+
+        claim = parser.parse_args(
+            [
+                "issue-claim",
+                "clearday",
+                "--issue",
+                "3",
+                "--slug",
+                "claim-lifecycle",
+                "--builder",
+                "builder-a",
+            ]
+        )
+        self.assertEqual(claim.issue, "3")
+        self.assertEqual(claim.slug, "claim-lifecycle")
+
+        status = parser.parse_args(["issue-status", "clearday", "--issue", "3"])
+        self.assertEqual(status.issue, "3")
+
+        close = parser.parse_args(
+            [
+                "issue-close",
+                "clearday",
+                "--issue",
+                "3",
+                "--builder",
+                "builder-a",
+                "--result",
+                "merged",
+                "--merge-sha",
+                "abc123",
+            ]
+        )
+        self.assertEqual(close.result, "merged")
+
+        build = parser.parse_args(
+            ["build", "clearday", "--issue", "3", "--builder", "builder-a"]
+        )
+        self.assertEqual(build.issue, "3")
+        self.assertEqual(build.builder, "builder-a")
+        run = parser.parse_args(
+            [
+                "run",
+                "clearday",
+                "build",
+                "--issue",
+                "3",
+                "--builder",
+                "builder-a",
+            ]
+        )
+        self.assertEqual(run.issue, "3")
+        verify = parser.parse_args(
+            ["verify", "clearday", "--issue", "3", "--builder", "builder-a"]
+        )
+        self.assertEqual(verify.builder, "builder-a")
+
+    def test_cli_claim_build_status_and_close_run_end_to_end(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(
+            repository,
+            phase="build",
+            commands={"build": [["python3", "-c", "import os; print(os.getcwd())"]]},
+        )
+        previous_directory = Path.cwd()
+        try:
+            os.chdir(self.root)
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(
+                    cli_main(
+                        [
+                            "issue-claim",
+                            "external",
+                            "--issue",
+                            "3",
+                            "--slug",
+                            "cli-flow",
+                            "--builder",
+                            "builder-a",
+                        ]
+                    ),
+                    0,
+                )
+            claim = json.loads(output.getvalue())
+
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(
+                    cli_main(
+                        [
+                            "build",
+                            "external",
+                            "--issue",
+                            "3",
+                            "--builder",
+                            "builder-a",
+                            "--execute",
+                        ]
+                    ),
+                    0,
+                )
+            build = json.loads(output.getvalue())
+            self.assertIn(claim["worktree"], build["steps"][0]["outputTail"])
+
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(
+                    cli_main(
+                        [
+                            "verify",
+                            "external",
+                            "--issue",
+                            "3",
+                            "--builder",
+                            "builder-a",
+                            "--execute",
+                        ]
+                    ),
+                    0,
+                )
+            verify = json.loads(output.getvalue())
+            self.assertEqual(verify["issue"], "3")
+            self.assertEqual(verify["builder"], "builder-a")
+            self.assertIn(claim["worktree"], verify["results"][0]["worktree"])
+
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(
+                    cli_main(["issue-status", "external", "--issue", "3"]),
+                    0,
+                )
+            self.assertEqual(json.loads(output.getvalue())["state"], "active")
+
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(
+                    cli_main(
+                        [
+                            "issue-close",
+                            "external",
+                            "--issue",
+                            "3",
+                            "--builder",
+                            "builder-a",
+                            "--result",
+                            "abandoned",
+                        ]
+                    ),
+                    0,
+                )
+            self.assertEqual(json.loads(output.getvalue())["status"], "closed")
+        finally:
+            os.chdir(previous_directory)
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@
   },
   "git": {
     "branchPattern": "agent/{issue}-{slug}",
+    "worktreeRoot": "../.worktrees/{repo}",
     "commitPattern": "loop({product}): {message}"
   }
 }

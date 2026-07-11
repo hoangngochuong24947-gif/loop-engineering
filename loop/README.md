@@ -34,8 +34,13 @@ python3 scripts/loopctl.py portfolio
 python3 scripts/loopctl.py status clearday
 python3 scripts/loopctl.py track clearday --kind architecture --summary "Local task graph and planner service"
 python3 scripts/loopctl.py advance clearday
+python3 scripts/loopctl.py issue-claim clearday \
+  --issue 12 --slug planner-preview --builder builder-a
+python3 scripts/loopctl.py issue-status clearday --issue 12
 python3 scripts/loopctl.py build clearday
 python3 scripts/loopctl.py build clearday --execute
+python3 scripts/loopctl.py build clearday \
+  --issue 12 --builder builder-a --execute
 python3 scripts/loopctl.py verify clearday --execute
 python3 scripts/loopctl.py runtime-record clearday \
   --actor simulator-agent --summary "Created and saved a plan" \
@@ -48,10 +53,16 @@ python3 scripts/loopctl.py block clearday \
   --id signing --category account --summary "Device signing unavailable" \
   --user-action-required --fallback "Continue in Simulator"
 python3 scripts/loopctl.py git-snapshot clearday --record
+python3 scripts/loopctl.py issue-close clearday \
+  --issue 12 --builder builder-a --result merged --merge-sha abc123
 ```
 
 Builder commands default to a dry run. `--execute` is required to run external
-commands. The legacy `loopctl checkpoint` command is retained only for old
+commands. `run`, `build`, and `verify` preserve their legacy behavior when no
+Issue is supplied. Issue mode requires matching `--issue` and `--builder`
+arguments and executes only in the active claim worktree. Closing a clean claim
+removes its worktree but never deletes its branch. The legacy `loopctl
+checkpoint` command is retained only for old
 single-repository manifests. External product repositories use their own
 `scripts/create-checkpoint.sh` after merge readiness, so ordinary commits remain
 quiet and checkpoints are annotated, verified milestones.
