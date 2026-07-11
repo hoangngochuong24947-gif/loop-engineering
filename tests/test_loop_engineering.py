@@ -151,6 +151,99 @@ class LoopEngineeringTests(unittest.TestCase):
         ranked = rank_portfolio(self.paths)
         self.assertEqual([item["id"] for item in ranked], ["strong", "weak"])
 
+    def test_repository_portfolio_matches_market_expansion_contract(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        portfolio = json.loads(
+            (repository_root / "loop/portfolio.json").read_text(encoding="utf-8")
+        )
+        opportunities = portfolio["opportunities"]
+        expected_ids = {
+            "visual-day-planner",
+            "focus-intervention",
+            "habit-routine",
+            "focus-sound",
+            "study-deck",
+            "student-timetable",
+            "private-journal",
+            "mood-symptom-log",
+            "accessible-reader",
+            "pdf-workbench",
+            "document-receipt-scanner",
+            "voice-memory",
+            "medication-log",
+            "sleep-log",
+            "workout-planner",
+            "plant-care",
+            "envelope-budget",
+            "pantry-meal",
+            "recipe-library",
+            "natural-language-calendar",
+            "private-clipboard",
+            "mail-triage",
+            "markdown-knowledge-base",
+            "mac-storage-cleaner",
+            "home-inventory",
+            "photo-cleanup",
+        }
+
+        self.assertEqual(len(opportunities), 26)
+        self.assertEqual({item["id"] for item in opportunities}, expected_ids)
+        self.assertEqual(len({item["name"] for item in opportunities}), 26)
+
+        required_fields = {
+            "id",
+            "name",
+            "category",
+            "batch",
+            "incumbents",
+            "pricingPain",
+            "wedge",
+            "firstSlice",
+            "optionalAI",
+            "primaryRisk",
+            "firstIntents",
+            "metrics",
+            "references",
+        }
+        config = json.loads(
+            (repository_root / "loop/config.json").read_text(encoding="utf-8")
+        )
+        for opportunity in opportunities:
+            with self.subTest(opportunity=opportunity["id"]):
+                self.assertTrue(required_fields.issubset(opportunity))
+                self.assertIn(opportunity["batch"], {"A", "B", "C"})
+                self.assertTrue(opportunity["references"])
+                self.assertTrue(
+                    all(
+                        reference.startswith("https://")
+                        for reference in opportunity["references"]
+                    )
+                )
+                self.assertTrue(opportunity["pricingPain"]["signal"])
+                self.assertTrue(opportunity["pricingPain"]["ourModel"])
+                self.assertTrue(opportunity["firstSlice"]["workflow"])
+                self.assertTrue(opportunity["optionalAI"]["proposal"])
+                self.assertTrue(opportunity["optionalAI"]["fallback"])
+                self.assertTrue(opportunity["optionalAI"]["requiresReview"])
+                self.assertTrue(opportunity["primaryRisk"]["area"])
+                self.assertTrue(opportunity["primaryRisk"]["mitigation"])
+                self.assertIsInstance(score_opportunity(opportunity, config), float)
+
+    def test_batch_a_portfolio_slices_are_local_without_account_or_ai(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        opportunities = json.loads(
+            (repository_root / "loop/portfolio.json").read_text(encoding="utf-8")
+        )["opportunities"]
+        batch_a = [item for item in opportunities if item["batch"] == "A"]
+
+        self.assertGreaterEqual(len(batch_a), 7)
+        for opportunity in batch_a:
+            with self.subTest(opportunity=opportunity["id"]):
+                first_slice = opportunity["firstSlice"]
+                self.assertTrue(first_slice["localFirst"])
+                self.assertFalse(first_slice["accountRequired"])
+                self.assertFalse(first_slice["aiRequired"])
+
     def test_tracker_gate_and_advance(self) -> None:
         self.assertFalse(gate_status(self.paths, "sample")["ready"])
         append_event(
