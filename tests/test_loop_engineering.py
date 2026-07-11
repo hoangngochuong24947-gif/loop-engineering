@@ -212,7 +212,7 @@ class LoopEngineeringTests(unittest.TestCase):
             with self.subTest(opportunity=opportunity["id"]):
                 self.assertTrue(required_fields.issubset(opportunity))
                 self.assertIn(opportunity["batch"], {"A", "B", "C"})
-                self.assertTrue(opportunity["references"])
+                self.assertIsInstance(opportunity["references"], list)
                 self.assertTrue(
                     all(
                         reference.startswith("https://")
@@ -231,9 +231,10 @@ class LoopEngineeringTests(unittest.TestCase):
 
     def test_batch_a_portfolio_slices_are_local_without_account_or_ai(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
-        opportunities = json.loads(
+        portfolio = json.loads(
             (repository_root / "loop/portfolio.json").read_text(encoding="utf-8")
-        )["opportunities"]
+        )
+        opportunities = portfolio["opportunities"]
         batch_a = [item for item in opportunities if item["batch"] == "A"]
 
         self.assertGreaterEqual(len(batch_a), 7)
@@ -243,6 +244,103 @@ class LoopEngineeringTests(unittest.TestCase):
                 self.assertTrue(first_slice["localFirst"])
                 self.assertFalse(first_slice["accountRequired"])
                 self.assertFalse(first_slice["aiRequired"])
+
+    def test_legacy_portfolio_directions_are_archived_losslessly(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        portfolio = json.loads(
+            (repository_root / "loop/portfolio.json").read_text(encoding="utf-8")
+        )
+        legacy_ids = {
+            "freelance-time",
+            "family-operations",
+            "personal-crm",
+            "knowledge-inbox",
+            "subscription-tracker",
+            "language-speaking",
+            "pet-care",
+            "food-log",
+            "travel-organizer",
+            "wardrobe-memory",
+        }
+        baseline = json.loads(
+            subprocess.run(
+                ["git", "show", "2f06178:loop/portfolio.json"],
+                cwd=repository_root,
+                env=clean_git_environment(),
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+            ).stdout
+        )
+        expected = {
+            item["id"]: item
+            for item in baseline["opportunities"]
+            if item["id"] in legacy_ids
+        }
+        archive = portfolio["legacyBacklog"]["archive"]
+        config = json.loads(
+            (repository_root / "loop/config.json").read_text(encoding="utf-8")
+        )
+
+        self.assertEqual({item["id"] for item in archive}, legacy_ids)
+        self.assertEqual(set(expected), legacy_ids)
+        self.assertTrue(
+            legacy_ids.isdisjoint(
+                {item["id"] for item in portfolio["opportunities"]}
+            )
+        )
+        for archived in archive:
+            with self.subTest(opportunity=archived["id"]):
+                self.assertEqual(archived["sourceCommit"], "2f06178")
+                self.assertEqual(
+                    archived["previousScore"],
+                    score_opportunity(expected[archived["id"]], config),
+                )
+                self.assertEqual(archived["evidenceStatus"], "not-in-current-research")
+                self.assertTrue(archived["archiveReason"])
+                self.assertTrue(archived["futureReview"])
+                original = {
+                    key: value
+                    for key, value in archived.items()
+                    if key
+                    not in {
+                        "sourceCommit",
+                        "previousScore",
+                        "evidenceStatus",
+                        "archiveReason",
+                        "futureReview",
+                    }
+                }
+                self.assertEqual(original, expected[archived["id"]])
+
+    def test_active_references_are_registered_and_unknown_evidence_is_honest(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        portfolio = json.loads(
+            (repository_root / "loop/portfolio.json").read_text(encoding="utf-8")
+        )
+        registry = portfolio["researchEvidence"]["registeredReferences"]
+        registered_urls = set(registry.values())
+        self.assertEqual(set(registry), {f"S{index}" for index in range(1, 31)})
+
+        for opportunity in portfolio["opportunities"]:
+            with self.subTest(opportunity=opportunity["id"]):
+                self.assertTrue(set(opportunity["references"]).issubset(registered_urls))
+                if not opportunity["references"]:
+                    self.assertEqual(
+                        opportunity["evidenceStatus"], "needs-primary-source"
+                    )
+                    self.assertTrue(opportunity["researchSection"])
+                    self.assertNotEqual(opportunity["batch"], "A")
+                    pricing_signal = opportunity["pricingPain"]["signal"].lower()
+                    for unsupported_claim in (
+                        "$",
+                        "/year",
+                        "/month",
+                        "subscription",
+                        "paywall",
+                        "premium",
+                    ):
+                        self.assertNotIn(unsupported_claim, pricing_signal)
 
     def test_tracker_gate_and_advance(self) -> None:
         self.assertFalse(gate_status(self.paths, "sample")["ready"])

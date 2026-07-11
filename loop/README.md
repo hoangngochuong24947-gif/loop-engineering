@@ -35,6 +35,9 @@ Batch `A` is the first tracer pool: `visual-day-planner`, `study-deck`,
 no AI. Batch `B` needs additional domain or data-integrity work; batch `C` needs
 extra permission, privacy, deletion, entitlement, media, or model-cost proof.
 Ranking orders discovery; it does not authorize parallel product scaffolding.
+`researchEvidence.registeredReferences` is the S1-S30 source allowlist.
+`legacyBacklog.archive` preserves omitted baseline directions and their previous
+scores without pretending they were merged into the active 26.
 
 ## Common commands
 
