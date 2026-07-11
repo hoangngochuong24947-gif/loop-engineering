@@ -17,7 +17,12 @@ from loop_engineering.claims import (
     load_claim,
     resolve_claim_repository,
 )
-from loop_engineering.checker import checker_record, checker_start, merge_readiness
+from loop_engineering.checker import (
+    checker_cleanup,
+    checker_record,
+    checker_start,
+    merge_readiness,
+)
 from loop_engineering.builder import (
     resolve_commands,
     run_action,
@@ -1387,6 +1392,7 @@ class LoopEngineeringTests(unittest.TestCase):
             issue="4",
             slug="risk-verification",
             builder="builder-a",
+            risk="low",
         )
 
         self.assertEqual(select_verification_profile("auto", "low"), "focused")
@@ -1420,9 +1426,6 @@ class LoopEngineeringTests(unittest.TestCase):
             self.paths,
             "external",
             execute=True,
-            issue="4",
-            builder="builder-a",
-            risk="low",
             profile="fast",
         )
         self.assertEqual(fast["profile"], "fast")
@@ -1459,6 +1462,7 @@ class LoopEngineeringTests(unittest.TestCase):
             issue="4",
             slug="checker-ready",
             builder="builder-a",
+            risk="high",
         )
         worktree = Path(claim["worktree"])
         (worktree / "feature.txt").write_text("feature\n", encoding="utf-8")
@@ -1523,15 +1527,38 @@ class LoopEngineeringTests(unittest.TestCase):
                 head=head,
             )
         checker_dirty.unlink()
-        checker_record(
-            self.paths,
-            "external",
-            issue="4",
-            builder="builder-a",
-            checker="checker-b",
-            verdict="pass",
-            head=head,
-        )
+        previous_directory = Path.cwd()
+        try:
+            os.chdir(self.root)
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(
+                    cli_main(
+                        [
+                            "checker-record",
+                            "external",
+                            "--issue",
+                            "4",
+                            "--builder",
+                            "builder-a",
+                            "--checker",
+                            "checker-b",
+                            "--verdict",
+                            "pass",
+                            "--head",
+                            head,
+                            "--pull-request",
+                            "9",
+                            "--report",
+                            contract["reportPath"],
+                        ]
+                    ),
+                    0,
+                )
+            feature_event = json.loads(output.getvalue())
+            self.assertEqual(feature_event["data"]["pullRequest"], "9")
+        finally:
+            os.chdir(previous_directory)
         self.assertTrue(merge_readiness(self.paths, "external", "4", risk="high")["ready"])
 
         product = json.loads(self.paths.product("external").read_text(encoding="utf-8"))
@@ -1606,6 +1633,199 @@ class LoopEngineeringTests(unittest.TestCase):
         changed = merge_readiness(self.paths, "external", "4", risk="high")
         self.assertFalse(changed["ready"])
         self.assertIn("checker", changed["missing"])
+
+    def test_checker_record_cli_preserves_legacy_product_flow(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(repository, phase="verify", commands={})
+        head = repository_state(self.paths, "external")["head"]
+        report = self.root / "legacy-checker.md"
+        report.write_text("pass\n", encoding="utf-8")
+        previous_directory = Path.cwd()
+        try:
+            os.chdir(self.root)
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(
+                    cli_main(
+                        [
+                            "checker-record",
+                            "external",
+                            "--issue",
+                            "legacy",
+                            "--builder",
+                            "builder-a",
+                            "--checker",
+                            "checker-b",
+                            "--verdict",
+                            "pass",
+                            "--head",
+                            head,
+                            "--pull-request",
+                            "10",
+                            "--report",
+                            str(report),
+                        ]
+                    ),
+                    0,
+                )
+            event = json.loads(output.getvalue())
+            self.assertEqual(event["data"]["pullRequest"], "10")
+            self.assertEqual(event["data"]["report"], str(report))
+        finally:
+            os.chdir(previous_directory)
+
+    def test_claim_risk_cannot_be_downgraded_by_verify_or_ready(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(
+            repository,
+            phase="build",
+            commands={
+                "build": [["python3", "-c", "print('build')"]],
+                "test": [["python3", "-c", "print('test')"]],
+            },
+        )
+        claim_issue(
+            self.paths,
+            "external",
+            issue="44",
+            slug="risk-bound",
+            builder="builder-a",
+            risk="high",
+        )
+
+        with self.assertRaisesRegex(LoopError, "cannot downgrade"):
+            run_verification(
+                self.paths,
+                "external",
+                execute=True,
+                issue="44",
+                builder="builder-a",
+                risk="low",
+                profile="auto",
+            )
+        with self.assertRaisesRegex(LoopError, "cannot downgrade"):
+            run_verification(
+                self.paths,
+                "external",
+                execute=True,
+                issue="44",
+                builder="builder-a",
+                risk="high",
+                profile="focused",
+            )
+        receipt = run_verification(
+            self.paths,
+            "external",
+            execute=True,
+            issue="44",
+            builder="builder-a",
+            profile="auto",
+        )
+        self.assertEqual(receipt["claimRisk"], "high")
+        self.assertEqual(receipt["profile"], "full")
+        self.assertEqual(
+            merge_readiness(self.paths, "external", "44", risk="low")[
+                "expectedProfile"
+            ],
+            "full",
+        )
+
+    def test_verification_rejects_commands_that_change_head_branch_or_dirty_state(self) -> None:
+        scenarios = {
+            "head": [
+                ["python3", "-c", "open('new.txt','w').write('new')"],
+                ["git", "add", "new.txt"],
+                ["git", "commit", "-m", "command commit"],
+            ],
+            "branch": [["git", "switch", "-c", "command-branch"]],
+            "dirty": [["python3", "-c", "open('README.md','w').write('dirty')"]],
+        }
+        for index, (name, commands) in enumerate(scenarios.items(), start=1):
+            with self.subTest(name=name):
+                repository = self.make_repository(f"repo-{name}")
+                issue = f"5{index}"
+                self.write_external_product(
+                    repository,
+                    phase="build",
+                    commands={"build": commands},
+                )
+                claim = claim_issue(
+                    self.paths,
+                    "external",
+                    issue=issue,
+                    slug=f"mutates-{name}",
+                    builder="builder-a",
+                    risk="high",
+                )
+                receipt = run_verification(
+                    self.paths,
+                    "external",
+                    execute=True,
+                    issue=issue,
+                    builder="builder-a",
+                    profile="auto",
+                )
+                self.assertFalse(receipt["success"])
+                self.assertEqual(receipt["head"], claim["baseSha"])
+                self.assertIn("afterHead", receipt)
+                self.assertIn("afterBranch", receipt)
+                self.assertIn("afterDirty", receipt)
+
+    def test_checker_same_sha_retry_and_clean_only_cleanup(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(
+            repository,
+            phase="build",
+            commands={"build": [["python3", "-c", "print('ok')"]]},
+        )
+        claim_issue(
+            self.paths,
+            "external",
+            issue="45",
+            slug="checker-retry",
+            builder="builder-a",
+            risk="medium",
+        )
+        head = claim_status(self.paths, "external", "45")["head"]
+        first = checker_start(
+            self.paths,
+            "external",
+            issue="45",
+            builder="builder-a",
+            checker="checker-b",
+            head=head,
+        )
+        retry = checker_start(
+            self.paths,
+            "external",
+            issue="45",
+            builder="builder-a",
+            checker="checker-b",
+            head=head,
+        )
+        self.assertEqual(retry["worktree"], first["worktree"])
+        dirty = Path(first["worktree"]) / "dirty.txt"
+        dirty.write_text("dirty\n", encoding="utf-8")
+        with self.assertRaisesRegex(LoopError, "clean"):
+            checker_cleanup(
+                self.paths,
+                "external",
+                issue="45",
+                builder="builder-a",
+                checker="checker-b",
+                head=head,
+            )
+        dirty.unlink()
+        cleaned = checker_cleanup(
+            self.paths,
+            "external",
+            issue="45",
+            builder="builder-a",
+            checker="checker-b",
+            head=head,
+        )
+        self.assertTrue(cleaned["worktreeRemoved"])
+        self.assertFalse(Path(first["worktree"]).exists())
 
 
 if __name__ == "__main__":

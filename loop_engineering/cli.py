@@ -9,7 +9,7 @@ from typing import Any
 
 from .builder import run_action, run_verification
 from .claims import claim_issue, claim_status, close_claim
-from .checker import checker_record, checker_start, merge_readiness
+from .checker import checker_cleanup, checker_record, checker_start, merge_readiness
 from .gitops import checkpoint, git_snapshot, record_snapshot
 from .model import (
     LoopError,
@@ -280,6 +280,20 @@ def command_ready(paths: LoopPaths, args: argparse.Namespace) -> int:
     return 0 if result["ready"] else 1
 
 
+def command_checker_cleanup(paths: LoopPaths, args: argparse.Namespace) -> int:
+    _print_json(
+        checker_cleanup(
+            paths,
+            args.product,
+            issue=args.issue,
+            builder=args.builder,
+            checker=args.checker,
+            head=args.head,
+        )
+    )
+    return 0
+
+
 def command_release_record(paths: LoopPaths, args: argparse.Namespace) -> int:
     _print_json(
         record_release(
@@ -342,6 +356,7 @@ def command_issue_claim(paths: LoopPaths, args: argparse.Namespace) -> int:
             issue=args.issue,
             slug=args.slug,
             builder=args.builder,
+            risk=args.risk,
             base_ref=args.base,
         )
     )
@@ -415,7 +430,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--execute", action="store_true")
     verify.add_argument("--issue")
     verify.add_argument("--builder")
-    verify.add_argument("--risk", default="low")
+    verify.add_argument("--risk")
     verify.add_argument(
         "--profile", default="auto", choices=("fast", "focused", "full", "auto")
     )
@@ -465,8 +480,16 @@ def build_parser() -> argparse.ArgumentParser:
     ready = subcommands.add_parser("ready")
     ready.add_argument("product")
     ready.add_argument("--issue", required=True)
-    ready.add_argument("--risk", required=True)
+    ready.add_argument("--risk")
     ready.set_defaults(handler=command_ready)
+
+    checker_cleanup_parser = subcommands.add_parser("checker-cleanup")
+    checker_cleanup_parser.add_argument("product")
+    checker_cleanup_parser.add_argument("--issue", required=True)
+    checker_cleanup_parser.add_argument("--builder", required=True)
+    checker_cleanup_parser.add_argument("--checker", required=True)
+    checker_cleanup_parser.add_argument("--head")
+    checker_cleanup_parser.set_defaults(handler=command_checker_cleanup)
 
     release = subcommands.add_parser("release-record")
     release.add_argument("product")
@@ -503,6 +526,7 @@ def build_parser() -> argparse.ArgumentParser:
     issue_claim.add_argument("--issue", required=True)
     issue_claim.add_argument("--slug", required=True)
     issue_claim.add_argument("--builder", required=True)
+    issue_claim.add_argument("--risk", default="medium")
     issue_claim.add_argument("--base")
     issue_claim.set_defaults(handler=command_issue_claim)
 

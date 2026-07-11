@@ -31,6 +31,18 @@ FULL_VERIFICATION_RISKS = {
     "shared-architecture",
     "release",
 }
+RISK_LEVELS = {
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "data-migration": 3,
+    "external-write": 3,
+    "external-writes": 3,
+    "governance": 3,
+    "shared-architecture": 3,
+    "release": 3,
+}
+PROFILE_LEVELS = {"fast": 0, "focused": 1, "full": 2}
 
 
 def select_verification_profile(profile: str, risk: str) -> str:
@@ -41,6 +53,13 @@ def select_verification_profile(profile: str, risk: str) -> str:
     if profile != "auto":
         return profile
     return "full" if risk in FULL_VERIFICATION_RISKS else "focused"
+
+
+def _risk_level(risk: str) -> int:
+    try:
+        return RISK_LEVELS[risk]
+    except KeyError as exc:
+        raise LoopError(f"Unknown verification risk: {risk}") from exc
 
 
 def _verification_actions(product: dict[str, Any], profile: str) -> list[str]:
@@ -178,11 +197,20 @@ def run_action(
             success = False
             break
 
-    result["success"] = success
     after = repository_state_at(repository, product.get("repository", {}))
-    result["head"] = after["head"]
-    result["branch"] = after["branch"]
-    result["dirty"] = after["dirty"]
+    stable = (
+        before["dirty"] is False
+        and after["dirty"] is False
+        and before["head"] == after["head"]
+        and before["branch"] == after["branch"]
+    )
+    result["success"] = success and stable
+    result["head"] = before["head"]
+    result["branch"] = before["branch"]
+    result["dirty"] = before["dirty"]
+    result["afterHead"] = after["head"]
+    result["afterBranch"] = after["branch"]
+    result["afterDirty"] = after["dirty"]
     runs = workspace_root(paths) / "loop" / "runs"
     runs.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%dT%H%M%S-%f")
@@ -197,14 +225,17 @@ def run_action(
         paths,
         product_id,
         kind=_event_kind(action),
-        summary=f"{action} {'passed' if success else 'failed'}",
+        summary=f"{action} {'passed' if result['success'] else 'failed'}",
         data={
             "runPath": result["runPath"],
-            "success": success,
+            "success": result["success"],
             "action": action,
             "head": result["head"],
             "branch": result["branch"],
             "dirty": result["dirty"],
+            "afterHead": result["afterHead"],
+            "afterBranch": result["afterBranch"],
+            "afterDirty": result["afterDirty"],
             "issue": issue,
             "builder": builder,
             "worktree": result["worktree"],
@@ -221,16 +252,33 @@ def run_verification(
     execute: bool,
     issue: str | None = None,
     builder: str | None = None,
-    risk: str = "low",
+    risk: str | None = None,
     profile: str = "auto",
 ) -> dict[str, Any]:
     product = load_product(paths, product_id)
-    selected_profile = (
-        select_verification_profile(profile, risk) if issue is not None else "full"
-    )
+    claim = load_claim(paths, product_id, issue) if issue is not None else None
+    claim_risk = str(claim.get("risk", "medium")) if claim else None
+    effective_risk = risk or claim_risk or "medium"
+    _risk_level(effective_risk)
+    if claim_risk and _risk_level(effective_risk) < _risk_level(claim_risk):
+        raise LoopError(
+            f"Verification risk {effective_risk} cannot downgrade claim risk {claim_risk}"
+        )
+    required_profile = select_verification_profile("auto", effective_risk)
+    if issue is None:
+        selected_profile = "full" if profile == "auto" else profile
+    elif profile == "auto":
+        selected_profile = required_profile
+    else:
+        selected_profile = select_verification_profile(profile, effective_risk)
+        if PROFILE_LEVELS[selected_profile] < PROFILE_LEVELS[required_profile]:
+            raise LoopError(
+                f"Verification profile {selected_profile} cannot downgrade required {required_profile}"
+            )
     actions = _verification_actions(product, selected_profile)
     if not actions:
         raise LoopError(f"Product {product_id} has no build or test commands")
+    before_status = claim_status(paths, product_id, issue) if issue is not None else None
     results = [
         run_action(
             paths,
@@ -250,7 +298,8 @@ def run_verification(
         "execute": execute,
         "issue": issue,
         "builder": builder,
-        "risk": risk if issue is not None else None,
+        "risk": effective_risk if issue is not None else None,
+        "claimRisk": claim_risk,
         "requestedProfile": profile if issue is not None else None,
         "profile": selected_profile,
         "success": success,
@@ -259,14 +308,25 @@ def run_verification(
     if issue is None:
         return receipt
 
-    claim = load_claim(paths, product_id, issue)
-    status = claim_status(paths, product_id, issue)
+    assert before_status is not None
+    after_status = claim_status(paths, product_id, issue)
+    stable = (
+        before_status["dirty"] is False
+        and after_status["dirty"] is False
+        and before_status["head"] == after_status["head"]
+        and before_status["branch"] == after_status["branch"]
+    )
+    if execute:
+        receipt["success"] = receipt["success"] is True and stable
     receipt.update(
         {
             "baseSha": claim["baseSha"],
-            "head": status["head"],
-            "branch": status["branch"],
-            "dirty": status["dirty"],
+            "head": results[0].get("head") if results else before_status["head"],
+            "branch": results[0].get("branch") if results else before_status["branch"],
+            "dirty": results[0].get("dirty") if results else before_status["dirty"],
+            "afterHead": after_status["head"],
+            "afterBranch": after_status["branch"],
+            "afterDirty": after_status["dirty"],
             "worktree": claim["worktree"],
             "commands": [
                 command
@@ -284,7 +344,7 @@ def run_verification(
     runs = workspace_root(paths) / "loop" / "runs" / "verification"
     runs.mkdir(parents=True, exist_ok=True)
     receipt_path = runs / (
-        f"{product_id}-issue-{issue}-{status['head'][:12]}-"
+        f"{product_id}-issue-{issue}-{receipt['head'][:12]}-"
         f"{uuid.uuid4().hex}.json"
     )
     with receipt_path.open("x", encoding="utf-8") as handle:
@@ -295,7 +355,7 @@ def run_verification(
         paths,
         product_id,
         kind="verification_result",
-        summary=f"{selected_profile} verification {'passed' if success else 'failed'} for issue {issue}",
+        summary=f"{selected_profile} verification {'passed' if receipt['success'] else 'failed'} for issue {issue}",
         data={key: value for key, value in receipt.items() if key != "results"},
         trusted=True,
     )

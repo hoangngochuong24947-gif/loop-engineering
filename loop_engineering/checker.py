@@ -103,8 +103,19 @@ def checker_start(
         / "checkers"
         / f"{issue}-{checked_head[:12]}"
     )
+    path = _contract_path(paths, product_id, issue, checked_head)
     if checker_worktree.exists():
-        raise LoopError(f"Checker worktree already exists: {checker_worktree}")
+        contract = _load_contract(paths, product_id, issue, checked_head)
+        if contract.get("builder") != builder or contract.get("checker") != checker:
+            raise LoopError("Checker identities do not match the existing contract")
+        state = repository_state_at(checker_worktree, product.get("repository", {}))
+        if (
+            state.get("head") != checked_head
+            or state.get("branch") is not None
+            or state.get("dirty") is not False
+        ):
+            raise LoopError("Existing Checker worktree is not clean at the exact SHA")
+        return contract
     checker_worktree.parent.mkdir(parents=True, exist_ok=True)
     _git(repository, "worktree", "add", "--detach", str(checker_worktree), checked_head)
 
@@ -122,7 +133,6 @@ def checker_start(
         "verdict": None,
         "startedAt": now_iso(),
     }
-    path = _contract_path(paths, product_id, issue, checked_head)
     path.parent.mkdir(parents=True, exist_ok=True)
     contract["reportPath"] = str(path.relative_to(workspace_root(paths)))
     write_json(path, contract)
@@ -138,6 +148,7 @@ def checker_record(
     checker: str,
     verdict: str,
     head: str | None = None,
+    pull_request: str | None = None,
     report: str | None = None,
 ) -> dict[str, Any]:
     if verdict not in CHECKER_VERDICTS:
@@ -157,6 +168,7 @@ def checker_record(
             checker=checker,
             verdict=verdict,
             head=head,
+            pull_request=pull_request,
             report=report,
         )
     if claim.get("builder") != builder:
@@ -188,30 +200,77 @@ def checker_record(
             "issue": issue,
             "builder": builder,
             "checker": checker,
+            "pullRequest": pull_request,
             "verdict": verdict,
             "success": verdict == "pass",
             "head": checked_head,
             "branch": claim["branch"],
             "dirty": False,
             "checkerWorktree": str(checker_worktree),
+            "contractPath": contract.get("reportPath"),
             "report": report or contract.get("reportPath"),
         },
         trusted=True,
     )
     contract.update(
-        {"verdict": verdict, "recordedAt": now_iso(), "externalReport": report}
+        {
+            "verdict": verdict,
+            "recordedAt": now_iso(),
+            "pullRequest": pull_request,
+            "externalReport": report,
+        }
     )
     write_json(_contract_path(paths, product_id, issue, checked_head), contract)
     return event
 
 
+def checker_cleanup(
+    paths: LoopPaths,
+    product_id: str,
+    *,
+    issue: str,
+    builder: str,
+    checker: str,
+    head: str | None = None,
+) -> dict[str, Any]:
+    claim = load_claim(paths, product_id, issue)
+    status = claim_status(paths, product_id, issue)
+    checked_head = head or status["head"]
+    contract = _load_contract(paths, product_id, issue, checked_head)
+    if contract.get("builder") != builder or contract.get("checker") != checker:
+        raise LoopError("Checker identities do not match the started contract")
+    checker_worktree = Path(str(contract["worktree"]))
+    product = load_product(paths, product_id)
+    state = repository_state_at(checker_worktree, product.get("repository", {}))
+    if state.get("head") != checked_head or state.get("branch") is not None:
+        raise LoopError("Checker cleanup requires the exact detached SHA")
+    if state.get("dirty") is not False:
+        raise LoopError("Checker cleanup requires a clean worktree")
+    _git(repository_path(paths, product), "worktree", "remove", str(checker_worktree))
+    contract.update(
+        {"worktreeRemoved": True, "cleanedAt": now_iso()}
+    )
+    write_json(_contract_path(paths, product_id, issue, checked_head), contract)
+    return contract
+
+
+def _artifact_exists(paths: LoopPaths, value: Any) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = workspace_root(paths) / path
+    return path.is_file()
+
+
 def merge_readiness(
-    paths: LoopPaths, product_id: str, issue: str, *, risk: str
+    paths: LoopPaths, product_id: str, issue: str, *, risk: str | None = None
 ) -> dict[str, Any]:
     claim = load_claim(paths, product_id, issue)
     status = claim_status(paths, product_id, issue)
     events = read_events(paths, product_id)
-    expected_profile = select_verification_profile("auto", risk)
+    claim_risk = str(claim.get("risk", "medium"))
+    expected_profile = select_verification_profile("auto", claim_risk)
     missing: list[str] = []
     reasons: dict[str, str] = {}
 
@@ -235,8 +294,9 @@ def merge_readiness(
         and verification_data.get("branch") == claim.get("branch")
         and verification_data.get("dirty") is False
         and verification_data.get("builder") == claim.get("builder")
-        and verification_data.get("risk") == risk
-        and verification_data.get("profile") == expected_profile
+        and verification_data.get("claimRisk", "medium") == claim_risk
+        and verification_data.get("profile") in {expected_profile, "full"}
+        and _artifact_exists(paths, verification_data.get("receiptPath"))
     )
     if not verification_valid:
         missing.append("verification")
@@ -260,6 +320,7 @@ def merge_readiness(
         and checker_data.get("dirty") is False
         and checker_data.get("builder") == claim.get("builder")
         and checker_data.get("checker") != claim.get("builder")
+        and _artifact_exists(paths, checker_data.get("contractPath"))
     )
     if not checker_valid:
         missing.append("checker")
@@ -269,7 +330,7 @@ def merge_readiness(
         "schema": "loop-ready/v1",
         "product": product_id,
         "issue": issue,
-        "risk": risk,
+        "risk": claim_risk,
         "expectedProfile": expected_profile,
         "head": status.get("head"),
         "ready": not missing,
