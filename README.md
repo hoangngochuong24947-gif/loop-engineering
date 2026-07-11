@@ -9,6 +9,7 @@ It combines:
 - phase gates from discovery through release;
 - append-only JSONL tracking;
 - external product-repository registration and live Git state;
+- one-Issue/one-Builder claims with isolated Git worktrees;
 - reproducible product builder commands;
 - build, test, runtime, Checker, release, and blocker evidence bound to Git SHAs;
 - Git snapshots and guarded product-scoped checkpoints;
@@ -43,6 +44,11 @@ The tracker repository does not contain product source. Each product manifest
 registers its own clone path, public repository URL, and default branch. Command
 execution occurs inside that product repository, and failed, dirty, or stale
 evidence cannot satisfy a phase gate.
+
+Claimed work runs in an isolated `agent/<issue>-<slug>` worktree without
+switching or cleaning the stable checkout. Local claim receipts are coordination
+locks under ignored `loop/runs/claims/`; GitHub Issues remain the cross-machine
+source of truth.
 
 ## Tests
 

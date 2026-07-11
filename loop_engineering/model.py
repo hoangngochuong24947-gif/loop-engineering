@@ -13,6 +13,39 @@ class LoopError(RuntimeError):
     pass
 
 
+GIT_REPOSITORY_ENVIRONMENT = {
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_DIR",
+    "GIT_GRAFT_FILE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_INTERNAL_SUPER_PREFIX",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PREFIX",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_SHALLOW_FILE",
+    "GIT_WORK_TREE",
+}
+
+
+def clean_git_environment() -> dict[str, str]:
+    """Return an environment that cannot redirect Git into another repository."""
+    environment = os.environ.copy()
+    for key in tuple(environment):
+        if (
+            key in GIT_REPOSITORY_ENVIRONMENT
+            or key.startswith("GIT_CONFIG_KEY_")
+            or key.startswith("GIT_CONFIG_VALUE_")
+        ):
+            environment.pop(key, None)
+    return environment
+
+
 @dataclass(frozen=True)
 class LoopPaths:
     root: Path
@@ -119,7 +152,7 @@ def repository_path(paths: LoopPaths, product: dict[str, Any]) -> Path:
         raise LoopError(f"Product {product.get('id', '<unknown>')} has no repository path")
     candidate = Path(str(raw_path)).expanduser()
     if not candidate.is_absolute():
-        candidate = paths.root / candidate
+        candidate = workspace_root(paths) / candidate
     return candidate.resolve()
 
 
@@ -127,10 +160,22 @@ def product_repository_path(paths: LoopPaths, product_id: str) -> Path:
     return repository_path(paths, load_product(paths, product_id))
 
 
+def workspace_root(paths: LoopPaths) -> Path:
+    common_dir = _git(paths.root, "rev-parse", "--git-common-dir", check=False)
+    if not common_dir:
+        return paths.root
+    common_path = Path(common_dir)
+    if not common_path.is_absolute():
+        common_path = paths.root / common_path
+    resolved = common_path.resolve()
+    return resolved.parent if resolved.name == ".git" else paths.root
+
+
 def _git(repository: Path, *arguments: str, check: bool = True) -> str:
     completed = subprocess.run(
         ["git", *arguments],
         cwd=repository,
+        env=clean_git_environment(),
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -144,10 +189,10 @@ def _git(repository: Path, *arguments: str, check: bool = True) -> str:
     return completed.stdout.strip()
 
 
-def repository_state(paths: LoopPaths, product_id: str) -> dict[str, Any]:
-    product = load_product(paths, product_id)
-    repository = repository_path(paths, product)
-    repository_config = product.get("repository", {})
+def repository_state_at(
+    repository: Path, repository_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    repository_config = repository_config or {}
     default_branch = str(repository_config.get("defaultBranch", "main"))
     required_local = bool(repository_config.get("requiredLocal", True))
     state: dict[str, Any] = {
@@ -176,6 +221,12 @@ def repository_state(paths: LoopPaths, product_id: str) -> dict[str, Any]:
             state["mainHead"] = value
             break
     return state
+
+
+def repository_state(paths: LoopPaths, product_id: str) -> dict[str, Any]:
+    product = load_product(paths, product_id)
+    repository = repository_path(paths, product)
+    return repository_state_at(repository, product.get("repository", {}))
 
 
 def score_opportunity(

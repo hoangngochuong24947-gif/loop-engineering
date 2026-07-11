@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .builder import run_action, run_verification
+from .claims import claim_issue, claim_status, close_claim
 from .gitops import checkpoint, git_snapshot, record_snapshot
 from .model import (
     LoopError,
@@ -165,19 +166,39 @@ def command_advance(paths: LoopPaths, args: argparse.Namespace) -> int:
 
 
 def command_run(paths: LoopPaths, args: argparse.Namespace) -> int:
-    result = run_action(paths, args.product, args.action, execute=args.execute)
+    result = run_action(
+        paths,
+        args.product,
+        args.action,
+        execute=args.execute,
+        issue=args.issue,
+        builder=args.builder,
+    )
     _print_json(result)
     return 0 if result.get("success") is not False else 1
 
 
 def command_build(paths: LoopPaths, args: argparse.Namespace) -> int:
-    result = run_action(paths, args.product, "build", execute=args.execute)
+    result = run_action(
+        paths,
+        args.product,
+        "build",
+        execute=args.execute,
+        issue=args.issue,
+        builder=args.builder,
+    )
     _print_json(result)
     return 0 if result.get("success") is not False else 1
 
 
 def command_verify(paths: LoopPaths, args: argparse.Namespace) -> int:
-    result = run_verification(paths, args.product, execute=args.execute)
+    result = run_verification(
+        paths,
+        args.product,
+        execute=args.execute,
+        issue=args.issue,
+        builder=args.builder,
+    )
     _print_json(result)
     return 0 if result.get("success") is not False else 1
 
@@ -289,6 +310,39 @@ def command_unblock(paths: LoopPaths, args: argparse.Namespace) -> int:
     return 0
 
 
+def command_issue_claim(paths: LoopPaths, args: argparse.Namespace) -> int:
+    _print_json(
+        claim_issue(
+            paths,
+            args.product,
+            issue=args.issue,
+            slug=args.slug,
+            builder=args.builder,
+            base_ref=args.base,
+        )
+    )
+    return 0
+
+
+def command_issue_status(paths: LoopPaths, args: argparse.Namespace) -> int:
+    _print_json(claim_status(paths, args.product, args.issue))
+    return 0
+
+
+def command_issue_close(paths: LoopPaths, args: argparse.Namespace) -> int:
+    _print_json(
+        close_claim(
+            paths,
+            args.product,
+            issue=args.issue,
+            builder=args.builder,
+            result=args.result,
+            merge_sha=args.merge_sha,
+        )
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Loop Engineering product operator")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -321,16 +375,22 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("product")
     run.add_argument("action")
     run.add_argument("--execute", action="store_true")
+    run.add_argument("--issue")
+    run.add_argument("--builder")
     run.set_defaults(handler=command_run)
 
     build = subcommands.add_parser("build")
     build.add_argument("product")
     build.add_argument("--execute", action="store_true")
+    build.add_argument("--issue")
+    build.add_argument("--builder")
     build.set_defaults(handler=command_build)
 
     verify = subcommands.add_parser("verify")
     verify.add_argument("product")
     verify.add_argument("--execute", action="store_true")
+    verify.add_argument("--issue")
+    verify.add_argument("--builder")
     verify.set_defaults(handler=command_verify)
 
     snapshot = subcommands.add_parser("git-snapshot")
@@ -395,6 +455,27 @@ def build_parser() -> argparse.ArgumentParser:
     unblock.add_argument("--id", required=True)
     unblock.add_argument("--summary", required=True)
     unblock.set_defaults(handler=command_unblock)
+
+    issue_claim = subcommands.add_parser("issue-claim")
+    issue_claim.add_argument("product")
+    issue_claim.add_argument("--issue", required=True)
+    issue_claim.add_argument("--slug", required=True)
+    issue_claim.add_argument("--builder", required=True)
+    issue_claim.add_argument("--base")
+    issue_claim.set_defaults(handler=command_issue_claim)
+
+    issue_status = subcommands.add_parser("issue-status")
+    issue_status.add_argument("product")
+    issue_status.add_argument("--issue", required=True)
+    issue_status.set_defaults(handler=command_issue_status)
+
+    issue_close = subcommands.add_parser("issue-close")
+    issue_close.add_argument("product")
+    issue_close.add_argument("--issue", required=True)
+    issue_close.add_argument("--builder", required=True)
+    issue_close.add_argument("--result", required=True, choices=("merged", "abandoned"))
+    issue_close.add_argument("--merge-sha")
+    issue_close.set_defaults(handler=command_issue_close)
 
     return parser
 
