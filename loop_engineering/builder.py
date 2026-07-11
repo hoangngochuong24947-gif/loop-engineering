@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shlex
 import subprocess
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -148,13 +149,15 @@ def run_action(
     result["head"] = after["head"]
     result["branch"] = after["branch"]
     result["dirty"] = after["dirty"]
-    paths.runs.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_path = paths.runs / f"{product_id}-{action}-{stamp}.json"
-    with run_path.open("w", encoding="utf-8") as handle:
+    runs = workspace_root(paths) / "loop" / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S-%f")
+    scope = f"issue-{issue}" if issue else "product"
+    run_path = runs / f"{product_id}-{action}-{scope}-{stamp}-{uuid.uuid4().hex}.json"
+    with run_path.open("x", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
-    result["runPath"] = str(run_path.relative_to(paths.root))
+    result["runPath"] = str(run_path.relative_to(workspace_root(paths)))
 
     append_event(
         paths,

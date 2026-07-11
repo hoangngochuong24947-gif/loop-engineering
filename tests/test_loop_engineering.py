@@ -581,6 +581,100 @@ class LoopEngineeringTests(unittest.TestCase):
             product_repository.resolve(),
         )
 
+    def test_claim_lock_is_shared_across_tracker_worktrees(self) -> None:
+        tracker = self.root / "tracker"
+        tracker.mkdir()
+        product_repository = self.make_repository("product-repository")
+        loop_dir = tracker / "loop"
+        (loop_dir / "products").mkdir(parents=True)
+        (loop_dir / "tracker").mkdir()
+        (loop_dir / "runs").mkdir()
+        (loop_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "phases": ["build"],
+                    "gates": {"build": []},
+                    "git": {"branchPattern": "agent/{issue}-{slug}"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (loop_dir / "portfolio.json").write_text(
+            json.dumps({"opportunities": []}), encoding="utf-8"
+        )
+        (loop_dir / "products" / "external.json").write_text(
+            json.dumps(
+                {
+                    "id": "external",
+                    "name": "External",
+                    "repository": {
+                        "path": str(product_repository),
+                        "defaultBranch": "main",
+                    },
+                    "project": {},
+                    "loop": {"phase": "build", "cycle": 1},
+                    "commands": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (loop_dir / "tracker" / "external.jsonl").touch()
+        environment = clean_git_environment()
+        subprocess.run(
+            ["git", "init", "-b", "main"],
+            cwd=tracker,
+            env=environment,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Loop Test"],
+            cwd=tracker,
+            env=environment,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "loop@example.com"],
+            cwd=tracker,
+            env=environment,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "add", "."], cwd=tracker, env=environment, check=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "tracker"],
+            cwd=tracker,
+            env=environment,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        linked = self.root / ".worktrees" / "tracker" / "builder"
+        linked.parent.mkdir(parents=True)
+        subprocess.run(
+            ["git", "worktree", "add", "-b", "agent/tracker", str(linked), "main"],
+            cwd=tracker,
+            env=environment,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+
+        claim_issue(
+            LoopPaths(tracker),
+            "external",
+            issue="3",
+            slug="one",
+            builder="builder-a",
+        )
+        with self.assertRaisesRegex(LoopError, "already claimed"):
+            claim_issue(
+                LoopPaths(linked),
+                "external",
+                issue="3",
+                slug="two",
+                builder="builder-b",
+            )
+
     def test_legacy_product_rejects_issue_claim_but_keeps_existing_command_resolution(self) -> None:
         self.assertEqual(resolve_commands(self.paths, "sample", "build")[0][1], "Sample")
         with self.assertRaisesRegex(LoopError, "repository manifest"):
@@ -835,6 +929,53 @@ class LoopEngineeringTests(unittest.TestCase):
             ).stdout.strip(),
             "false",
         )
+
+    def test_concurrent_issue_runs_use_distinct_durable_receipts(self) -> None:
+        repository = self.make_repository()
+        self.write_external_product(
+            repository,
+            phase="build",
+            commands={"build": [["python3", "-c", "print('ok')"]]},
+        )
+        claim_issue(
+            self.paths,
+            "external",
+            issue="1",
+            slug="first",
+            builder="builder-a",
+        )
+        claim_issue(
+            self.paths,
+            "external",
+            issue="2",
+            slug="second",
+            builder="builder-b",
+        )
+
+        first = run_action(
+            self.paths,
+            "external",
+            "build",
+            execute=True,
+            issue="1",
+            builder="builder-a",
+        )
+        second = run_action(
+            self.paths,
+            "external",
+            "build",
+            execute=True,
+            issue="2",
+            builder="builder-b",
+        )
+
+        self.assertNotEqual(first["runPath"], second["runPath"])
+        first_receipt = json.loads((self.root / first["runPath"]).read_text(encoding="utf-8"))
+        second_receipt = json.loads((self.root / second["runPath"]).read_text(encoding="utf-8"))
+        self.assertEqual(first_receipt["issue"], "1")
+        self.assertEqual(first_receipt["builder"], "builder-a")
+        self.assertEqual(second_receipt["issue"], "2")
+        self.assertEqual(second_receipt["builder"], "builder-b")
 
     def test_cli_exposes_issue_lifecycle_and_builder_routing_arguments(self) -> None:
         parser = build_parser()

@@ -42,7 +42,14 @@ def _git(repository: Path, *arguments: str, check: bool = True) -> str:
 def _claim_path(paths: LoopPaths, product_id: str, issue: str) -> Path:
     if not SAFE_NAME.fullmatch(product_id) or not SAFE_NAME.fullmatch(issue):
         raise LoopError("Product and Issue must use a safe Git name")
-    return paths.runs / "claims" / product_id / f"{issue}.json"
+    return (
+        workspace_root(paths)
+        / "loop"
+        / "runs"
+        / "claims"
+        / product_id
+        / f"{issue}.json"
+    )
 
 
 def _worktree_root(
