@@ -26,6 +26,19 @@ store the current phase and reproducible build commands.
 - `loop_engineering/`: tracker, builder, scoring, and Git implementation.
 - `scripts/loopctl.py`: command-line entry point.
 
+## Portfolio batches
+
+`portfolio.json` keeps 26 distinct directions from the market-expansion research.
+Batch `A` is the first tracer pool: `visual-day-planner`, `study-deck`,
+`private-journal`, `accessible-reader`, `medication-log`, `pantry-meal`, and
+`private-clipboard`. Each has a useful local slice that requires no account and
+no AI. Batch `B` needs additional domain or data-integrity work; batch `C` needs
+extra permission, privacy, deletion, entitlement, media, or model-cost proof.
+Ranking orders discovery; it does not authorize parallel product scaffolding.
+`researchEvidence.registeredReferences` is the S1-S30 source allowlist.
+`legacyBacklog.archive` preserves omitted baseline directions and their previous
+scores without pretending they were merged into the active 26.
+
 ## Common commands
 
 ```bash
