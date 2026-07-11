@@ -17,9 +17,20 @@ from .model import (
     load_json,
     load_product,
     rank_portfolio,
+    repository_state,
     write_json,
 )
-from .tracker import advance_product, append_event, product_status, read_events
+from .tracker import (
+    advance_product,
+    append_event,
+    product_status,
+    read_events,
+    record_blocker,
+    record_checker,
+    record_release,
+    record_runtime_proof,
+    resolve_blocker,
+)
 
 
 def _print_json(value: Any) -> None:
@@ -53,6 +64,7 @@ def command_doctor(paths: LoopPaths, _: argparse.Namespace) -> int:
         checks.append({"name": tool, "ok": shutil.which(tool) is not None})
 
     errors: list[str] = []
+    warnings: list[str] = []
     try:
         load_config(paths)
         ranked = rank_portfolio(paths)
@@ -63,10 +75,31 @@ def command_doctor(paths: LoopPaths, _: argparse.Namespace) -> int:
         try:
             load_product(paths, product_id)
             read_events(paths, product_id)
+            repository = repository_state(paths, product_id)
+            repository_ok = repository["available"] and repository["isGitRepository"]
+            required = repository["requiredLocal"]
+            checks.append(
+                {
+                    "name": f"product:{product_id}:repository",
+                    "ok": repository_ok or not required,
+                    "available": repository["available"],
+                    "isGitRepository": repository["isGitRepository"],
+                    "required": required,
+                    "path": repository["path"],
+                }
+            )
+            if not repository_ok:
+                message = f"Product {product_id} repository is unavailable: {repository['path']}"
+                (errors if required else warnings).append(message)
         except LoopError as exc:
             errors.append(str(exc))
 
-    result = {"ok": not errors and all(check["ok"] for check in checks), "checks": checks, "errors": errors}
+    result = {
+        "ok": not errors and all(check["ok"] for check in checks),
+        "checks": checks,
+        "warnings": warnings,
+        "errors": errors,
+    }
     _print_json(result)
     return 0 if result["ok"] else 1
 
@@ -96,6 +129,20 @@ def command_status(paths: LoopPaths, args: argparse.Namespace) -> int:
         if status["gate"]["missing"]:
             print("  missing: " + ", ".join(status["gate"]["missing"]))
         print(f"  hypothesis: {status['hypothesis']}")
+        repository = status["repository"]
+        availability = "available" if repository["available"] else "missing"
+        print(
+            f"  repository: {availability} / {repository['branch'] or '-'} / "
+            f"{(repository['head'] or '-')[:12]}"
+        )
+        if status["checkerStale"]:
+            print("  checker: stale")
+        if status["releaseBehindMain"]:
+            print("  release: behind main")
+        if status["openBlockers"]:
+            print(f"  blockers: {len(status['openBlockers'])}")
+        if status["userActionRequired"]:
+            print("  user action: required")
     return 0
 
 
@@ -171,6 +218,77 @@ def command_new_product(paths: LoopPaths, args: argparse.Namespace) -> int:
     return 0
 
 
+def command_checker_record(paths: LoopPaths, args: argparse.Namespace) -> int:
+    _print_json(
+        record_checker(
+            paths,
+            args.product,
+            issue=args.issue,
+            builder=args.builder,
+            checker=args.checker,
+            verdict=args.verdict,
+            head=args.head,
+            pull_request=args.pull_request,
+            report=args.report,
+        )
+    )
+    return 0
+
+
+def command_release_record(paths: LoopPaths, args: argparse.Namespace) -> int:
+    _print_json(
+        record_release(
+            paths,
+            args.product,
+            tag=args.tag,
+            url=args.url,
+            stage_report=args.stage_report,
+        )
+    )
+    return 0
+
+
+def command_runtime_record(paths: LoopPaths, args: argparse.Namespace) -> int:
+    _print_json(
+        record_runtime_proof(
+            paths,
+            args.product,
+            actor=args.actor,
+            summary=args.summary,
+            artifact=args.artifact,
+        )
+    )
+    return 0
+
+
+def command_block(paths: LoopPaths, args: argparse.Namespace) -> int:
+    _print_json(
+        record_blocker(
+            paths,
+            args.product,
+            blocker_id=args.id,
+            category=args.category,
+            summary=args.summary,
+            user_action_required=args.user_action_required,
+            cost=args.cost,
+            fallback=args.fallback,
+        )
+    )
+    return 0
+
+
+def command_unblock(paths: LoopPaths, args: argparse.Namespace) -> int:
+    _print_json(
+        resolve_blocker(
+            paths,
+            args.product,
+            blocker_id=args.id,
+            summary=args.summary,
+        )
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Loop Engineering product operator")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -232,6 +350,51 @@ def build_parser() -> argparse.ArgumentParser:
     new_product.add_argument("--name", required=True)
     new_product.add_argument("--idea", required=True)
     new_product.set_defaults(handler=command_new_product)
+
+    checker = subcommands.add_parser("checker-record")
+    checker.add_argument("product")
+    checker.add_argument("--issue", required=True)
+    checker.add_argument("--builder", required=True)
+    checker.add_argument("--checker", required=True)
+    checker.add_argument(
+        "--verdict",
+        required=True,
+        choices=("pass", "pass-with-follow-ups", "changes-required", "blocked"),
+    )
+    checker.add_argument("--head")
+    checker.add_argument("--pull-request")
+    checker.add_argument("--report")
+    checker.set_defaults(handler=command_checker_record)
+
+    release = subcommands.add_parser("release-record")
+    release.add_argument("product")
+    release.add_argument("--tag", required=True)
+    release.add_argument("--url", required=True)
+    release.add_argument("--stage-report")
+    release.set_defaults(handler=command_release_record)
+
+    runtime = subcommands.add_parser("runtime-record")
+    runtime.add_argument("product")
+    runtime.add_argument("--actor", required=True)
+    runtime.add_argument("--summary", required=True)
+    runtime.add_argument("--artifact", required=True)
+    runtime.set_defaults(handler=command_runtime_record)
+
+    blocker = subcommands.add_parser("block")
+    blocker.add_argument("product")
+    blocker.add_argument("--id", required=True)
+    blocker.add_argument("--category", required=True)
+    blocker.add_argument("--summary", required=True)
+    blocker.add_argument("--user-action-required", action="store_true")
+    blocker.add_argument("--cost")
+    blocker.add_argument("--fallback")
+    blocker.set_defaults(handler=command_block)
+
+    unblock = subcommands.add_parser("unblock")
+    unblock.add_argument("product")
+    unblock.add_argument("--id", required=True)
+    unblock.add_argument("--summary", required=True)
+    unblock.set_defaults(handler=command_unblock)
 
     return parser
 

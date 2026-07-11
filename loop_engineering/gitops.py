@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .builder import run_verification
-from .model import LoopError, LoopPaths, load_config, load_product
+from .model import LoopError, LoopPaths, load_config, load_product, repository_path
 from .tracker import append_event
 
 
@@ -26,15 +26,36 @@ def _git(paths: LoopPaths, *arguments: str, check: bool = True) -> str:
     return completed.stdout.strip()
 
 
+def _git_at(repository: Path, *arguments: str, check: bool = True) -> str:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=repository,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if check and completed.returncode != 0:
+        message = completed.stderr.strip() or completed.stdout.strip()
+        raise LoopError(f"git {' '.join(arguments)} failed in {repository}: {message}")
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
+
+
 def git_snapshot(paths: LoopPaths, product_id: str) -> dict[str, Any]:
     product = load_product(paths, product_id)
-    status_lines = _git(paths, "status", "--porcelain=v1").splitlines()
-    staged_lines = _git(paths, "diff", "--cached", "--name-only").splitlines()
+    repository = repository_path(paths, product)
+    if not repository.is_dir():
+        raise LoopError(f"Product repository is unavailable: {repository}")
+    status_lines = _git_at(repository, "status", "--porcelain=v1").splitlines()
+    staged_lines = _git_at(repository, "diff", "--cached", "--name-only").splitlines()
     return {
         "product": product_id,
         "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "branch": _git(paths, "branch", "--show-current"),
-        "head": _git(paths, "rev-parse", "HEAD", check=False) or None,
+        "repositoryPath": str(repository),
+        "branch": _git_at(repository, "branch", "--show-current"),
+        "head": _git_at(repository, "rev-parse", "HEAD", check=False) or None,
         "dirty": bool(status_lines),
         "status": status_lines,
         "staged": staged_lines,
@@ -81,6 +102,11 @@ def checkpoint(
 ) -> dict[str, Any]:
     config = load_config(paths)
     product = load_product(paths, product_id)
+    if isinstance(product.get("repository"), dict):
+        raise LoopError(
+            "Legacy commit checkpoints are disabled for external product repositories; "
+            "use the product repository's explicit verified checkpoint script"
+        )
     owned_paths = list(product.get("ownedPaths", []))
     if not owned_paths:
         raise LoopError(f"Product {product_id} has no ownedPaths")

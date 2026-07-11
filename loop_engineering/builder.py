@@ -7,16 +7,33 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .model import LoopError, LoopPaths, load_product
+from .model import LoopError, LoopPaths, load_product, repository_path, repository_state
 from .tracker import append_event
 
 
 def _command_context(paths: LoopPaths, product: dict[str, Any]) -> dict[str, str]:
     project = product.get("project", {})
+    repo_path = repository_path(paths, product)
+    repository_config = product.get("repository")
+    target_path = product.get("targetPath")
+    if target_path:
+        target = Path(str(target_path)).expanduser()
+        if not target.is_absolute():
+            target = paths.root / target
+        resolved_target = target.resolve()
+    else:
+        resolved_target = repo_path
+    project_value = Path(str(project.get("projectPath", "")))
+    project_path = (
+        repo_path / project_value
+        if isinstance(repository_config, dict)
+        else paths.root / project_value
+    )
     return {
         "root": str(paths.root),
-        "targetPath": str(paths.root / product["targetPath"]),
-        "projectPath": str(paths.root / project.get("projectPath", "")),
+        "repoPath": str(repo_path),
+        "targetPath": str(resolved_target),
+        "projectPath": str(project_path.resolve()),
         "scheme": str(project.get("scheme", "")),
         "simulatorName": str(project.get("simulatorName", "")),
         "bundleId": str(project.get("bundleId", "")),
@@ -68,11 +85,16 @@ def run_action(
     if not execute:
         return result
 
+    repository = repository_path(paths, load_product(paths, product_id))
+    if not repository.is_dir():
+        raise LoopError(f"Product repository is unavailable: {repository}")
+    before = repository_state(paths, product_id)
+    result["repository"] = before
     success = True
     for command in commands:
         completed = subprocess.run(
             command,
-            cwd=paths.root,
+            cwd=repository,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -90,6 +112,10 @@ def run_action(
             break
 
     result["success"] = success
+    after = repository_state(paths, product_id)
+    result["head"] = after["head"]
+    result["branch"] = after["branch"]
+    result["dirty"] = after["dirty"]
     paths.runs.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     run_path = paths.runs / f"{product_id}-{action}-{stamp}.json"
@@ -103,7 +129,15 @@ def run_action(
         product_id,
         kind=_event_kind(action),
         summary=f"{action} {'passed' if success else 'failed'}",
-        data={"runPath": result["runPath"], "success": success},
+        data={
+            "runPath": result["runPath"],
+            "success": success,
+            "action": action,
+            "head": result["head"],
+            "branch": result["branch"],
+            "dirty": result["dirty"],
+        },
+        trusted=True,
     )
     return result
 

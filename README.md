@@ -8,8 +8,9 @@ It combines:
 - a scored market opportunity portfolio;
 - phase gates from discovery through release;
 - append-only JSONL tracking;
+- external product-repository registration and live Git state;
 - reproducible product builder commands;
-- build and test evidence capture;
+- build, test, runtime, Checker, release, and blocker evidence bound to Git SHAs;
 - Git snapshots and guarded product-scoped checkpoints;
 - checkpoint tags and non-destructive rollback branches.
 
@@ -37,6 +38,11 @@ python3 scripts/loopctl.py portfolio
 7. Release, hold, pivot, or kill.
 
 See [loop/README.md](loop/README.md) for commands and file layout.
+
+The tracker repository does not contain product source. Each product manifest
+registers its own clone path, public repository URL, and default branch. Command
+execution occurs inside that product repository, and failed, dirty, or stale
+evidence cannot satisfy a phase gate.
 
 ## Tests
 

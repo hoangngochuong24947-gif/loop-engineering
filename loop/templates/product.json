@@ -3,11 +3,16 @@
   "id": "PRODUCT_ID",
   "name": "PRODUCT_NAME",
   "ideaId": "IDEA_ID",
-  "targetPath": "targets/PRODUCT_NAME",
-  "ownedPaths": ["targets/PRODUCT_NAME", "loop/products/PRODUCT_ID.json", "loop/tracker/PRODUCT_ID.jsonl"],
+  "repository": {
+    "path": "../PRODUCT_ID",
+    "url": "",
+    "defaultBranch": "main",
+    "requiredLocal": false
+  },
+  "ownedPaths": ["loop/products/PRODUCT_ID.json", "loop/tracker/PRODUCT_ID.jsonl"],
   "project": {
     "type": "xcode",
-    "projectPath": "targets/PRODUCT_NAME/PRODUCT_NAME.xcodeproj",
+    "projectPath": "PRODUCT_NAME.xcodeproj",
     "scheme": "PRODUCT_NAME",
     "bundleId": "com.example.PRODUCT_NAME",
     "simulatorName": "iPhone 17"

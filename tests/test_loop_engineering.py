@@ -1,13 +1,36 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
+from argparse import Namespace
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
-from loop_engineering.builder import resolve_commands
-from loop_engineering.model import LoopError, LoopPaths, rank_portfolio, score_opportunity
-from loop_engineering.tracker import advance_product, append_event, gate_status, read_events
+from loop_engineering.builder import resolve_commands, run_action
+from loop_engineering.cli import command_doctor
+from loop_engineering.gitops import git_snapshot
+from loop_engineering.model import (
+    LoopError,
+    LoopPaths,
+    rank_portfolio,
+    repository_state,
+    score_opportunity,
+)
+from loop_engineering.tracker import (
+    advance_product,
+    append_event,
+    gate_status,
+    product_status,
+    read_events,
+    record_blocker,
+    record_checker,
+    record_release,
+    record_runtime_proof,
+    resolve_blocker,
+)
 
 
 class LoopEngineeringTests(unittest.TestCase):
@@ -56,6 +79,47 @@ class LoopEngineeringTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def make_repository(self, name: str = "repo") -> Path:
+        repository = self.root / name
+        repository.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=repository, check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(["git", "config", "user.name", "Loop Test"], cwd=repository, check=True)
+        subprocess.run(["git", "config", "user.email", "loop@example.com"], cwd=repository, check=True)
+        (repository / "README.md").write_text("test\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=repository, check=True)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=repository, check=True, stdout=subprocess.DEVNULL)
+        return repository
+
+    def write_external_product(
+        self,
+        repository: Path,
+        *,
+        phase: str,
+        commands: dict[str, list[list[str]]],
+        required_local: bool = True,
+    ) -> None:
+        product = {
+            "id": "external",
+            "name": "External",
+            "repository": {
+                "path": str(repository),
+                "url": "https://example.com/external.git",
+                "defaultBranch": "main",
+                "requiredLocal": required_local,
+            },
+            "project": {"scheme": "External"},
+            "loop": {"phase": phase, "cycle": 1},
+            "commands": commands,
+        }
+        self.paths.product("external").write_text(json.dumps(product), encoding="utf-8")
+        self.paths.events("external").touch()
+
+    def set_gate(self, phase: str, required: list[str]) -> None:
+        config = json.loads(self.paths.config.read_text(encoding="utf-8"))
+        config["phases"] = [phase]
+        config["gates"] = {phase: required}
+        self.paths.config.write_text(json.dumps(config), encoding="utf-8")
+
     def test_score_inverts_risk(self) -> None:
         config = json.loads(self.paths.config.read_text(encoding="utf-8"))
         self.assertEqual(
@@ -91,7 +155,164 @@ class LoopEngineeringTests(unittest.TestCase):
     def test_builder_resolves_product_tokens(self) -> None:
         command = resolve_commands(self.paths, "sample", "build")[0]
         self.assertEqual(command[0:2], ["echo", "Sample"])
-        self.assertEqual(command[2], str(self.root / "targets/Sample"))
+        self.assertEqual(command[2], str((self.root / "targets/Sample").resolve()))
+
+    def test_external_repository_commands_capture_sha_bound_success(self) -> None:
+        repository = self.make_repository()
+        self.set_gate("build", ["build_result"])
+        self.write_external_product(
+            repository,
+            phase="build",
+            commands={"build": [["python3", "-c", "import os; print(os.getcwd())"]]},
+        )
+
+        result = run_action(self.paths, "external", "build", execute=True)
+
+        self.assertTrue(result["success"])
+        self.assertIn(str(repository), result["steps"][0]["outputTail"])
+        self.assertEqual(result["head"], repository_state(self.paths, "external")["head"])
+        self.assertTrue(gate_status(self.paths, "external")["ready"])
+        snapshot = git_snapshot(self.paths, "external")
+        self.assertEqual(snapshot["repositoryPath"], str(repository.resolve()))
+        self.assertEqual(snapshot["head"], result["head"])
+
+    def test_failed_or_stale_evidence_never_satisfies_gate(self) -> None:
+        repository = self.make_repository()
+        self.set_gate("build", ["build_result"])
+        self.write_external_product(
+            repository,
+            phase="build",
+            commands={"build": [["python3", "-c", "raise SystemExit(1)"]]},
+        )
+        self.assertFalse(run_action(self.paths, "external", "build", execute=True)["success"])
+        self.assertFalse(gate_status(self.paths, "external")["ready"])
+
+        product = json.loads(self.paths.product("external").read_text(encoding="utf-8"))
+        product["commands"] = {"build": [["python3", "-c", "print('ok')"]]}
+        self.paths.product("external").write_text(json.dumps(product), encoding="utf-8")
+        self.assertTrue(run_action(self.paths, "external", "build", execute=True)["success"])
+        self.assertTrue(gate_status(self.paths, "external")["ready"])
+
+        (repository / "change.txt").write_text("new head\n", encoding="utf-8")
+        subprocess.run(["git", "add", "change.txt"], cwd=repository, check=True)
+        subprocess.run(["git", "commit", "-m", "new head"], cwd=repository, check=True, stdout=subprocess.DEVNULL)
+        self.assertFalse(gate_status(self.paths, "external")["ready"])
+
+    def test_manual_reserved_evidence_is_rejected(self) -> None:
+        with self.assertRaises(LoopError):
+            append_event(
+                self.paths,
+                "sample",
+                kind="test_result",
+                summary="pretend pass",
+                data={"success": True, "head": "fake"},
+            )
+
+    def test_checker_must_be_independent_and_current(self) -> None:
+        repository = self.make_repository()
+        self.set_gate("verify", ["checker_result"])
+        self.write_external_product(repository, phase="verify", commands={})
+        head = repository_state(self.paths, "external")["head"]
+
+        with self.assertRaises(LoopError):
+            record_checker(
+                self.paths,
+                "external",
+                issue="1",
+                builder="same-agent",
+                checker="same-agent",
+                verdict="pass",
+            )
+
+        record_checker(
+            self.paths,
+            "external",
+            issue="1",
+            builder="builder-a",
+            checker="checker-b",
+            verdict="pass",
+            head=head,
+        )
+        self.assertTrue(gate_status(self.paths, "external")["ready"])
+
+        (repository / "after-check.txt").write_text("stale\n", encoding="utf-8")
+        subprocess.run(["git", "add", "after-check.txt"], cwd=repository, check=True)
+        subprocess.run(["git", "commit", "-m", "after check"], cwd=repository, check=True, stdout=subprocess.DEVNULL)
+        status = product_status(self.paths, "external")
+        self.assertTrue(status["checkerStale"])
+        self.assertFalse(status["gate"]["ready"])
+
+    def test_runtime_proof_is_bound_to_clean_current_head(self) -> None:
+        repository = self.make_repository()
+        self.set_gate("verify", ["runtime_proof"])
+        self.write_external_product(repository, phase="verify", commands={})
+
+        record_runtime_proof(
+            self.paths,
+            "external",
+            actor="runtime-agent",
+            summary="Core flow completed",
+            artifact="screenshots/core-flow.png",
+        )
+        self.assertTrue(gate_status(self.paths, "external")["ready"])
+
+        (repository / "dirty.txt").write_text("uncommitted\n", encoding="utf-8")
+        self.assertFalse(gate_status(self.paths, "external")["ready"])
+
+    def test_release_and_blocker_status_are_structured(self) -> None:
+        repository = self.make_repository()
+        self.set_gate("release", ["release_result"])
+        self.write_external_product(repository, phase="release", commands={})
+        subprocess.run(["git", "tag", "-a", "v0.1.0-alpha.1", "-m", "alpha"], cwd=repository, check=True)
+
+        release = record_release(
+            self.paths,
+            "external",
+            tag="v0.1.0-alpha.1",
+            url="https://example.com/releases/alpha",
+        )
+        self.assertTrue(release["data"]["success"])
+        self.assertTrue(gate_status(self.paths, "external")["ready"])
+
+        (repository / "post-release.txt").write_text("ops-only\n", encoding="utf-8")
+        subprocess.run(["git", "add", "post-release.txt"], cwd=repository, check=True)
+        subprocess.run(["git", "commit", "-m", "post release"], cwd=repository, check=True, stdout=subprocess.DEVNULL)
+        self.assertTrue(gate_status(self.paths, "external")["ready"])
+        self.assertTrue(product_status(self.paths, "external")["releaseBehindMain"])
+
+        record_blocker(
+            self.paths,
+            "external",
+            blocker_id="signing",
+            category="account",
+            summary="Physical-device signing is unavailable",
+            user_action_required=True,
+            fallback="Continue in Simulator",
+        )
+        self.assertTrue(product_status(self.paths, "external")["userActionRequired"])
+        resolve_blocker(
+            self.paths,
+            "external",
+            blocker_id="signing",
+            summary="Signing configured",
+        )
+        self.assertFalse(product_status(self.paths, "external")["openBlockers"])
+
+    def test_doctor_fails_for_required_missing_repository(self) -> None:
+        missing = self.root / "missing-repository"
+        self.write_external_product(
+            missing,
+            phase="discover",
+            commands={},
+            required_local=True,
+        )
+        output = StringIO()
+        with redirect_stdout(output):
+            exit_code = command_doctor(self.paths, Namespace())
+        result = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 1)
+        self.assertFalse(result["ok"])
+        self.assertIn("repository is unavailable", result["errors"][0])
 
 
 if __name__ == "__main__":

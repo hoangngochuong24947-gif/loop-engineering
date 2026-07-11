@@ -3,24 +3,25 @@
   "id": "clearday",
   "name": "ClearDay",
   "ideaId": "ai-day-planner",
-  "targetPath": "targets/AI_Friendly_iOS_Lab/ClearDay",
+  "repository": {
+    "path": "../../targets/AI_Friendly_iOS_Lab/ClearDay",
+    "url": "https://github.com/hoangngochuong24947-gif/clearday-ios",
+    "defaultBranch": "main",
+    "requiredLocal": false
+  },
   "ownedPaths": [
-    "targets/AI_Friendly_iOS_Lab/ClearDay",
-    "targets/AI_Friendly_iOS_Lab/README.md",
-    "targets/AI_Friendly_iOS_Lab/opportunity-scan.md",
-    "targets/AI_Friendly_iOS_Lab/setup-status.md",
     "loop/products/clearday.json",
     "loop/tracker/clearday.jsonl"
   ],
   "project": {
     "type": "xcode",
-    "projectPath": "targets/AI_Friendly_iOS_Lab/ClearDay/ClearDay.xcodeproj",
+    "projectPath": "ClearDay.xcodeproj",
     "scheme": "ClearDay",
-    "bundleId": "com.example.ClearDay",
+    "bundleId": "com.clearday.app",
     "simulatorName": "iPhone 17"
   },
   "loop": {
-    "phase": "design",
+    "phase": "release",
     "cycle": 1,
     "hypothesis": "People will adopt a planner that turns vague tasks into an approved daily schedule without requiring an account or subscription.",
     "successMetrics": [
@@ -39,7 +40,7 @@
       ["xcodebuild", "-list", "-project", "{projectPath}"]
     ],
     "build": [
-      ["xcodebuild", "-project", "{projectPath}", "-scheme", "{scheme}", "-configuration", "Debug", "-destination", "platform=iOS Simulator,name={simulatorName}", "build"]
+      ["./scripts/verify.sh"]
     ],
     "test": [
       ["xcodebuild", "-project", "{projectPath}", "-scheme", "{scheme}", "-configuration", "Debug", "-destination", "platform=iOS Simulator,name={simulatorName}", "test"]
