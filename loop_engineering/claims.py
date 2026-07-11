@@ -21,6 +21,17 @@ from .tracker import append_event, now_iso
 
 
 SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+CLAIM_RISKS = {
+    "low",
+    "medium",
+    "high",
+    "data-migration",
+    "external-write",
+    "external-writes",
+    "governance",
+    "shared-architecture",
+    "release",
+}
 
 
 def _git(repository: Path, *arguments: str, check: bool = True) -> str:
@@ -196,12 +207,15 @@ def claim_issue(
     issue: str,
     slug: str,
     builder: str,
+    risk: str = "medium",
     base_ref: str | None = None,
 ) -> dict[str, Any]:
     if not SAFE_NAME.fullmatch(issue) or not SAFE_NAME.fullmatch(slug):
         raise LoopError("Issue and slug must use a safe Git name")
     if not builder.strip():
         raise LoopError("Builder identity must not be empty")
+    if risk not in CLAIM_RISKS:
+        raise LoopError(f"Unknown claim risk: {risk}")
     product = load_product(paths, product_id)
     if not isinstance(product.get("repository"), dict):
         raise LoopError("Issue claims require a product repository manifest")
@@ -252,6 +266,7 @@ def claim_issue(
         "product": product_id,
         "issue": issue,
         "builder": builder,
+        "risk": risk,
         "slug": slug,
         "status": "active",
         "baseRef": selected_ref,
@@ -286,6 +301,7 @@ def claim_issue(
         data={
             "issue": issue,
             "builder": builder,
+            "risk": risk,
             "branch": branch,
             "worktree": str(worktree),
             "baseSha": base_sha,

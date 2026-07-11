@@ -23,6 +23,7 @@ RESERVED_EVIDENCE_KINDS = {
     "build_result",
     "test_result",
     "runtime_proof",
+    "verification_result",
     "checker_result",
     "release_result",
 }
